@@ -141,7 +141,10 @@ async function fetchTreeListing(
   });
   if (!response.ok) return null;
 
-  const items = (await response.json()) as Array<{
+  // Route through readBoundedText so the 5 MB cap is enforced —
+  // response.json() bypasses the bounded reader entirely.
+  const treeText = await readBoundedText(response);
+  const items = JSON.parse(treeText) as Array<{
     name: string;
     type: "file" | "dir";
     size?: number;
@@ -196,7 +199,9 @@ async function fetchRepoRoot(
 
   // File tree
   if (contentsResponse.status === "fulfilled" && contentsResponse.value.ok) {
-    const items = (await contentsResponse.value.json()) as Array<{
+    // Route through readBoundedText so the 5 MB cap applies here too.
+    const contentsText = await readBoundedText(contentsResponse.value);
+    const items = JSON.parse(contentsText) as Array<{
       name: string;
       type: "file" | "dir";
       size?: number;

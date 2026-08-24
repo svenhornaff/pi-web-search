@@ -20,7 +20,8 @@ import type { DomainPolicy } from "./config.js";
  *   - Suffix match: ".example.com" matches "foo.example.com" but not "example.com"
  */
 export function checkDomainPolicy(hostname: string, policy: DomainPolicy): string | null {
-  const host = hostname.toLowerCase();
+  // Normalize trailing dot (valid FQDN form: "example.com." == "example.com")
+  const host = hostname.toLowerCase().replace(/\.$/, "");
 
   // Deny list checked first — deny wins.
   for (const entry of policy.deny) {
@@ -41,12 +42,16 @@ export function checkDomainPolicy(hostname: string, policy: DomainPolicy): strin
 }
 
 function matchesDomainEntry(hostname: string, entry: string): boolean {
+  // Both hostname and entry are already lowercased by the caller.
+  // Strip trailing dot from entry too — policy entries written with or without
+  // a trailing dot both match the same hosts.
+  const normEntry = entry.replace(/\.$/, "");
   // Exact match
-  if (hostname === entry) return true;
+  if (hostname === normEntry) return true;
   // Suffix match: entry starting with "." matches subdomains
-  if (entry.startsWith(".") && hostname.endsWith(entry)) return true;
+  if (normEntry.startsWith(".") && hostname.endsWith(normEntry)) return true;
   // Also match "example.com" as a suffix pattern for "*.example.com"
-  if (!entry.startsWith(".") && hostname.endsWith("." + entry)) return true;
+  if (!normEntry.startsWith(".") && hostname.endsWith("." + normEntry)) return true;
   return false;
 }
 
@@ -64,7 +69,14 @@ export async function validateFetchUrl(rawUrl: string): Promise<URL> {
     throw new Error(`Only https:// URLs are allowed: ${rawUrl}`);
   }
 
-  const hostname = url.hostname.toLowerCase();
+  // url.hostname wraps IPv6 literals in brackets (e.g. "[::1]") — strip them
+  // before isIP() so IPv6 addresses are recognised as IP literals, not hostnames.
+  const rawHostname = url.hostname.toLowerCase();
+  const hostname =
+    rawHostname.startsWith("[") && rawHostname.endsWith("]")
+      ? rawHostname.slice(1, -1)
+      : rawHostname;
+
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new Error(`Localhost URLs are blocked: ${rawUrl}`);
   }
@@ -111,20 +123,51 @@ function isBlockedIpv4(address: string): boolean {
 
   const [a, b, c, d] = octets;
   if (a === undefined || b === undefined || c === undefined || d === undefined) return false;
-  if (a === 10 || a === 127 || a === 0) return true;
+
+  // RFC 1122 — this host (0.0.0.0/8)
+  if (a === 0) return true;
+  // Loopback (127.0.0.0/8)
+  if (a === 127) return true;
+  // Private Class A (10.0.0.0/8)
+  if (a === 10) return true;
+  // Link-local (169.254.0.0/16)
   if (a === 169 && b === 254) return true;
+  // Shared Address Space / CGNAT (100.64.0.0/10)
   if (a === 100 && b >= 64 && b <= 127) return true;
+  // Private Class B (172.16.0.0/12)
   if (a === 172 && b >= 16 && b <= 31) return true;
+  // Private Class C (192.168.0.0/16)
   if (a === 192 && b === 168) return true;
+  // Benchmarking (198.18.0.0/15)
   if (a === 198 && (b === 18 || b === 19)) return true;
+  // TEST-NET-1 (192.0.2.0/24)
+  if (a === 192 && b === 0 && c === 2) return true;
+  // TEST-NET-2 (198.51.100.0/24)
+  if (a === 198 && b === 51 && c === 100) return true;
+  // TEST-NET-3 / Documentation (203.0.113.0/24)
   if (a === 203 && b === 0 && c === 113) return true;
+  // Multicast (224.0.0.0/4)
+  if (a >= 224 && a <= 239) return true;
+  // Reserved / broadcast (240.0.0.0/4 and 255.255.255.255)
+  if (a >= 240) return true;
+
+  void d; // d parsed but not needed for current checks — suppress lint
   return false;
 }
 
 function isBlockedIpv6(address: string): boolean {
   const normalized = address.toLowerCase();
+  // Loopback (::1)
   if (normalized === "::1") return true;
-  if (normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80")) return true;
+  // Unspecified address (::)
+  if (normalized === "::") return true;
+  // Unique Local (fc00::/7 — fc:: and fd::)
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  // Link-local (fe80::/10)
+  if (normalized.startsWith("fe80")) return true;
+  // Multicast (ff00::/8)
+  if (normalized.startsWith("ff")) return true;
+  // IPv4-mapped (::ffff:x.x.x.x) — check the embedded IPv4 part
   if (normalized.startsWith("::ffff:")) {
     const ipv4 = normalized.slice("::ffff:".length);
     return isBlockedIpv4(ipv4);

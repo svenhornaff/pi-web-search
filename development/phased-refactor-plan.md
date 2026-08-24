@@ -120,7 +120,9 @@ If `primaryProvider` fails and a later entry in the chain succeeds, the result i
 
 **Why third, not first:** none of these are currently exploitable through the extension's own tool interface without the model being told to fetch a specific malicious host — they harden the guard, they don't close an open door the way Phase 1/2 items do. Still real, still worth fixing before broader adoption.
 
-### 3.1 SSRF range coverage gaps
+### ~~3.1~~ ✅ Fixed v1.3.0 — SSRF range coverage gaps
+
+**Was:**
 
 `isBlockedIpv4`/`isBlockedIpv6` in `ssrf.ts` are missing six documented special-use ranges:
 
@@ -133,19 +135,23 @@ If `primaryProvider` fails and a later entry in the chain succeeds, the result i
 | `::` | IPv6 unspecified | Missing |
 | `ff00::/8` | IPv6 multicast | Missing |
 
-**Fix:** add the missing octet/prefix checks directly (cheap, matches the existing style), or replace the hand-rolled range table with a maintained CIDR-classification library (`ip-address`, `netmask`, or similar) so future IANA allocations don't require another manual audit. Given how many gaps a single review pass found, the maintained-library route is the more defensible long-term choice.
+**Fixed:** all six ranges added inline. Also fixed IPv6 bracket-stripping bug (`url.hostname` returns `[::1]`; `isIP()` needs `::1`). 15 new tests.
 
-### 3.2 GitHub handler bypasses the bounded reader
+### ~~3.2~~ ✅ Fixed v1.3.0 — GitHub handler bypasses the bounded reader
+
+**Was:**
 
 `github-handler.ts:144` calls `response.json()` directly on a `safeFetch()` response instead of routing through `readBoundedText`/`readBoundedArrayBuffer`. The 5 MB cap that `safe-fetch.ts` was built to guarantee doesn't apply here — a large or lying `Content-Length` on a GitHub API response isn't caught.
 
-**Fix:** read the body via `readBoundedText()` first, `JSON.parse()` after — same pattern already used two lines earlier in the same file (line 110, README fetch).
+**Fixed:** both `response.json()` calls in `fetchTreeListing` and `fetchRepoRoot` replaced with `readBoundedText()` + `JSON.parse()`.
 
-### 3.3 Domain policy has no trailing-dot normalization
+### ~~3.3~~ ✅ Fixed v1.3.0 — Domain policy trailing-dot normalization
+
+**Was:**
 
 `matchesDomainEntry()` does exact/suffix string comparison with no `.replace(/\.$/, "")` step. A hostname with a trailing dot (a valid FQDN form) won't match an allow/deny entry written without one.
 
-**Fix:** normalize both `hostname` and each policy `entry` (strip trailing dot, already-lowercased) before comparing. Small, contained, add a test case with a trailing-dot input.
+**Fixed:** trailing dots stripped from both `hostname` and `entry` before comparison. 5 new tests.
 
 ### 3.4 DNS-rebinding TOCTOU (documented, not fixed)
 

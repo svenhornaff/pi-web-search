@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.3.0] — 2026-08-24
+
+### Fixed
+
+- **3.1 — SSRF: six missing special-use IP ranges added to `ssrf.ts`**:
+  The hand-rolled block-lists in `isBlockedIpv4` and `isBlockedIpv6` were
+  missing the following documented IANA/RFC ranges:
+
+  | Range | Purpose |
+  |---|---|
+  | `192.0.2.0/24` | TEST-NET-1 (RFC 5737) |
+  | `198.51.100.0/24` | TEST-NET-2 (RFC 5737) |
+  | `224.0.0.0/4` | Multicast (RFC 5771) |
+  | `240.0.0.0/4` | Reserved / broadcast |
+  | `::` | IPv6 unspecified address |
+  | `ff00::/8` | IPv6 multicast |
+
+  Also fixed a pre-existing bug: `url.hostname` from the Web URL API wraps
+  IPv6 literals in brackets (`[::1]`), which `isIP()` doesn’t recognise as
+  an IP address (returns 0), so IPv6 literals fell through to DNS lookup and
+  raised `ENOTFOUND` instead of `Blocked network target`. Fixed by stripping
+  the brackets before calling `isIP()`.
+
+- **3.2 — GitHub handler: two `response.json()` calls replaced with bounded reader**:
+  `fetchTreeListing` and `fetchRepoRoot` in `github-handler.ts` called
+  `response.json()` directly on `safeFetch()` responses, bypassing the 5 MB
+  cap entirely. Fixed: both now call `readBoundedText()` first and
+  `JSON.parse()` after — the same pattern used for README fetches in the same
+  file.
+
+- **3.3 — Domain policy: trailing-dot normalization in `matchesDomainEntry()`**:
+  A hostname with a trailing dot (a valid FQDN: `"docs.example.com."`) did
+  not match a policy entry written without one (`"docs.example.com"`) and
+  vice versa. Fixed: both `hostname` (in `checkDomainPolicy`) and `entry`
+  (in `matchesDomainEntry`) have trailing dots stripped before comparison.
+
+### Added
+
+- **20 new tests in `tests/ssrf.test.ts`**:
+  - 9 IPv4 range tests (6 new ranges + 3 regression guards)
+  - 6 IPv6 range tests (3 new + 3 regression guards)
+  - 5 trailing-dot normalization tests
+  - All verified keyless (`env -i HOME=/tmp`).
+
+---
+
 ## [1.2.0] — 2026-08-24
 
 ### Fixed
