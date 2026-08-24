@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- **`install-local.sh` — wrong `settings.json` schema for local paths**:
+  The script was writing local filesystem paths into the `packages` array using a
+  `{ source: "..." }` object — that shape is only valid for `npm:` / `git:` remote
+  sources. A plain local path in `packages.source` is a silent no-op: pi never
+  loads it, but the script still printed "Registered.", making the failure invisible.
+  Fixed: local paths now go into a separate top-level `extensions` array and point
+  directly at `src/index.ts` (not the directory). Pointing at the directory has a
+  known upstream bug (`earendil-works/pi#1274`) where the `pi.extensions` manifest
+  inside `package.json` isn't reliably resolved from a directory path in
+  `settings.json`.
+
 - **Phase 2.1 — Three stale doc instances corrected**:
   - `config.ts` JSDoc header example: `["brave", "tavily"]` → `["brave", "exa", "tavily"]`.
   - `README.md` Configuration example: `["exa", "brave", "tavily"]` → `["brave", "exa", "tavily"]`.
