@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.2] — 2026-08-24
+
+### Fixed
+
+- **`tool-search.test.ts` key-injection bug (CI-breaking regression)**: the
+  integration tests used the module-level singleton `registry` whose providers
+  were constructed with no injected API key (`new BraveProvider()`, etc.).
+  `stubFetch` overrides `globalThis.fetch` but key resolution shells out to
+  `/usr/bin/security` (macOS Keychain via `execFile`) — not `fetch` — so stub
+  never intercepted it. Tests passed locally only because the author’s machine
+  has a real `brave-api-key` Keychain entry. On any keyless CI runner (Ubuntu,
+  clean `HOME`) all 9 tests in the file failed with:
+  `Error: Brave Search API key not found.` (confirmed by reproducing with
+  `env -i HOME=/tmp/ci-home-test node ...`).
+
+  **Fix:** re-register the singleton’s providers with injected test keys
+  (`new BraveProvider("test-brave-key")`, etc.) at the top of the test file,
+  using the same `registry.register()` method that `registry.test.ts` uses
+  with isolated instances. This is the established project pattern; applying
+  it to the singleton makes the integration tests genuinely keyless-safe
+  without changing any production code.
+
+  This is the same bug class as the old F-6 finding that was fixed in 0.3.7
+  (`providers.test.ts` injected keys) — it recurred because the new
+  `tool-search.test.ts` file didn’t follow the same pattern.
+
+---
+
 ## [1.0.1] — 2026-08-24
 
 ### Fixed

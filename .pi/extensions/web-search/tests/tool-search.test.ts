@@ -8,12 +8,24 @@ import { strict as assert } from "node:assert";
 import { createSearchTool } from "../src/tool-search.ts";
 import { SearchCache } from "../src/search-cache.ts";
 import { ProviderRegistry, registry } from "../src/providers/registry.ts";
+import { BraveProvider } from "../src/providers/brave.ts";
+import { TavilyProvider } from "../src/providers/tavily.ts";
+import { ExaProvider } from "../src/providers/exa.ts";
 
-// Override rate limits to 1000 req/s for tests — the limiter is real but
-// the 1 req/s Brave default would make integration tests unacceptably slow.
-registry.setRateLimit("brave", 1000);
+// Re-register singleton providers with injected test keys so tests never
+// call resolveApiKey() (which shells to /usr/bin/security on macOS or reads
+// env vars). Without this, tests pass locally only because the author's
+// keychain has real keys — they fail on any keyless CI runner (Ubuntu, clean env).
+// This is the same pattern registry.test.ts uses with isolated instances.
+registry.register("brave",  new BraveProvider("test-brave-key"));
+registry.register("tavily", new TavilyProvider("test-tavily-key"));
+registry.register("exa",    new ExaProvider("test-exa-key"));
+
+// Override rate limits to 1000 req/s — the 1 req/s Brave default would make
+// integration tests unacceptably slow.
+registry.setRateLimit("brave",  1000);
 registry.setRateLimit("tavily", 1000);
-registry.setRateLimit("exa", 1000);
+registry.setRateLimit("exa",    1000);
 
 const originalFetch = globalThis.fetch;
 after(() => { globalThis.fetch = originalFetch; });
