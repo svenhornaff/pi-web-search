@@ -60,7 +60,7 @@ node --input-type=module -e "
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 const settingsPath = process.argv[1];
-const extDir = process.argv[2];
+const entryFile = process.argv[2];
 
 let settings = {};
 if (existsSync(settingsPath)) {
@@ -76,18 +76,29 @@ if (existsSync(settingsPath)) {
   }
 }
 
-settings.packages ??= [];
-const already = settings.packages.some(
-  (p) => p && typeof p === 'object' && p.source === extDir,
-);
+// Local filesystem sources go in the top-level 'extensions' array, NOT
+// nested inside 'packages' (that array's 'source' field is for npm:/git:
+// remote sources only — a plain local path there is silently never loaded).
+// Point at the entry .ts file directly, not the directory: pointing at a
+// directory has a known open bug (earendil-works/pi#1274) where the
+// directory's package.json 'pi.extensions' manifest isn't reliably resolved.
+settings.extensions ??= [];
+const already = settings.extensions.includes(entryFile);
 if (!already) {
-  settings.packages.push({ source: extDir, extensions: ['./src/index.ts'] });
+  settings.extensions.push(entryFile);
 }
 
 writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 console.log(already ? 'Already registered — left settings.json unchanged.' : 'Registered.');
-" "$SETTINGS_FILE" "$EXT_DIR"
+" "$SETTINGS_FILE" "$EXT_DIR/src/index.ts"
 
 echo ""
-echo "Done. Set at least one provider key (Keychain recommended — see README §Setup),"
-echo "then start (or /reload) Pi in that workspace."
+echo "Set at least one provider key (Keychain recommended — see README §Setup)."
+echo ""
+echo "IMPORTANT — project trust: a workspace pi hasn't seen before has no saved"
+echo "trust decision, so on interactive startup pi will PROMPT before loading"
+echo "any project-local .pi/settings.json content at all, including this"
+echo "registration. Answer yes at that prompt (or run /trust once inside the"
+echo "session) — until you do, the extension is registered on disk but not"
+echo "actually loaded. Non-interactive modes (-p, --mode json, --mode rpc)"
+echo "never show that prompt and need --approve/-a passed explicitly instead."
