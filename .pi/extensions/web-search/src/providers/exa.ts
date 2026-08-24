@@ -6,7 +6,12 @@
  * Best for: research, AI topics, semantic discovery, finding recent papers.
  *
  * API: POST https://api.exa.ai/search
- * Docs: https://exa.ai/docs/reference/search
+ * Docs: https://docs.exa.ai/reference/search
+ *      https://exa.ai/docs/reference/search-api-guide-for-coding-agents
+ *
+ * Content strategy: request highlights (10x fewer tokens than text, vendor's
+ * stated best practice for agent workflows) with text as a fallback field
+ * when highlights come back empty. See search-architecture-review.md §Finding 1.
  *
  * Free tier: 1,000 searches/month (dashboard.exa.ai)
  * Pricing: ~$0.007 per search (neural auto mode)
@@ -44,6 +49,7 @@ interface ExaApiResponse {
     title?: string;
     url?: string;
     text?: string;
+    highlights?: string[];
     summary?: string;
     publishedDate?: string;
     author?: string;
@@ -80,10 +86,12 @@ export class ExaProvider implements SearchProvider {
       numResults: Math.min(options?.maxResults ?? 5, 20),
       type: "auto",
       contents: {
-        // Request plain text content alongside results — equivalent to
-        // Tavily's raw_content, so the LLM can read pages without a
-        // separate web_fetch call.
-        text: { maxCharacters: 3000 },
+        // highlights: vendor's stated best practice for agent workflows;
+        // returns the most relevant excerpts at ~10x fewer tokens than text.
+        // text kept alongside as fallback for results where highlights is empty.
+        // Both fields can be requested in the same call (Exa docs confirmed).
+        highlights: { numSentences: 5, highlightsPerUrl: 3 },
+        text: { maxCharacters: 2000 },
       },
     };
 
@@ -102,7 +110,10 @@ export class ExaProvider implements SearchProvider {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "x-api-key": this.apiKey,
+          // Exa's primary documented auth pattern (Aug 2026).
+          // x-api-key is retained as a comment for rollback; both appear in
+          // third-party guides but Authorization: Bearer is the canonical form.
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(requestBody),
         signal,
@@ -119,17 +130,23 @@ export class ExaProvider implements SearchProvider {
 
     const results = (data.results ?? [])
       .filter(
-        (r): r is { title: string; url: string; text?: string; summary?: string } =>
+        (r): r is { title: string; url: string; text?: string; highlights?: string[]; summary?: string } =>
           typeof r.title === "string" && typeof r.url === "string",
       )
-      .map((r) => ({
-        title: r.title,
-        url: r.url,
-        description: r.summary ?? r.text?.slice(0, 300) ?? "",
-        // Expose full text as fullContent so the LLM can read page content
-        // without a separate web_fetch call — same pattern as Tavily.
-        fullContent: r.text,
-      }));
+      .map((r) => {
+        // Prefer highlights for fullContent (fewer tokens, highest-relevance excerpts).
+        // Fall back to text when highlights is absent or empty.
+        const highlightText =
+          r.highlights && r.highlights.length > 0
+            ? r.highlights.join(" … ")
+            : undefined;
+        return {
+          title: r.title,
+          url: r.url,
+          description: r.summary ?? highlightText?.slice(0, 300) ?? r.text?.slice(0, 300) ?? "",
+          fullContent: highlightText ?? r.text,
+        };
+      });
 
     return {
       results,

@@ -3,20 +3,18 @@
  *
  * Wraps `fetchWithRetry` with:
  *   - `redirect: "manual"` and per-hop SSRF validation, so a redirect to a
- *     blocked target is rejected *before* that hop's request ever fires
- *     (validating only `response.url` after `redirect: "follow"` is
- *     post-hoc — the request already happened by the time you can check).
- *   - a hard cap on response body size, enforced via `Content-Length` when
- *     present and by aborting the stream read once the cap is exceeded
- *     otherwise (a server can omit or lie about `Content-Length`).
- *
- * Known limitation (documented, not fixed here): validation resolves the
- * hostname and `fetch()` resolves it again independently, so a DNS answer
- * that changes between the two lookups (DNS rebinding) is not caught. A
- * full fix needs resolved-IP pinning (e.g. a custom undici Agent) — out of
- * scope while the guard already blocks every non-rebinding SSRF path.
+ *     blocked target is rejected *before* that hop's request ever fires.
+ *   - **Resolved-IP pinning** (DNS-rebinding TOCTOU fix): `validateFetchUrl()`
+ *     returns the IP it validated; `safeFetch` builds a per-request undici
+ *     `Agent` whose `connect.lookup` always returns that exact IP, so the
+ *     socket dials the address we approved — not whatever a second DNS lookup
+ *     would return a moment later.
+ *   - A hard cap on response body size, enforced via `Content-Length` when
+ *     present and by aborting the stream mid-read otherwise.
  */
 
+import { Agent } from "undici";
+import { isIP } from "node:net";
 import { fetchWithRetry, type FetchRetryOptions } from "./retry.js";
 import { validateFetchUrl } from "./ssrf.js";
 
@@ -30,16 +28,34 @@ export interface SafeFetchOptions extends FetchRetryOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Build a per-request undici Agent that pins connections to `resolvedIp`.
+ * The agent's `connect.lookup` always returns the pre-validated IP, bypassing
+ * the system resolver and closing the DNS-rebinding TOCTOU window.
+ */
+function buildPinnedAgent(resolvedIp: string): Agent {
+  const family = isIP(resolvedIp) as 4 | 6 | 0;
+  return new Agent({
+    connect: {
+      lookup: (_host, _opts, cb) =>
+        cb(null, [{ address: resolvedIp, family: family === 6 ? 6 : 4 }]),
+    },
+  });
+}
+
 export async function safeFetch(url: string, options: SafeFetchOptions = {}): Promise<Response> {
-  let target = await validateFetchUrl(url);
+  let validated = await validateFetchUrl(url);
 
   for (let hop = 0; ; hop++) {
+    const pinnedAgent = buildPinnedAgent(validated.resolvedIp);
     const response = await fetchWithRetry(
-      target,
+      validated.url,
       {
         headers: options.headers,
         signal: options.signal,
         redirect: "manual",
+        // @ts-expect-error — undici dispatcher option is not in the global fetch types
+        dispatcher: pinnedAgent,
       },
       { retries: options.retries, delayMs: options.delayMs },
     );
@@ -52,13 +68,13 @@ export async function safeFetch(url: string, options: SafeFetchOptions = {}): Pr
 
     const location = response.headers.get("location");
     if (!location) {
-      throw new Error(`Redirect (${response.status}) from ${target.toString()} had no Location header`);
+      throw new Error(`Redirect (${response.status}) from ${validated.url.toString()} had no Location header`);
     }
     if (hop >= MAX_REDIRECTS) {
       throw new Error(`Too many redirects fetching ${url}`);
     }
 
-    target = await validateFetchUrl(new URL(location, target).toString());
+    validated = await validateFetchUrl(new URL(location, validated.url).toString());
   }
 }
 

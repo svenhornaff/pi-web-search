@@ -7,8 +7,9 @@ import { registry, type ProviderName } from "./providers/registry.js";
 import { suggestProvider } from "./provider-selector.js";
 import { aggregate } from "./search-aggregator.js";
 import type { SearchCache } from "./search-cache.js";
-import { formatSearchResults } from "./format.js";
+import { formatSearchResults, DEFAULT_TOTAL_FULL_CONTENT_CHARS } from "./format.js";
 import type { WebSearchConfig } from "./config.js";
+import type { ModelBudget } from "./types.js";
 
 interface SearchDetails {
   query?: string;
@@ -35,10 +36,22 @@ interface SearchParams {
 export function createSearchTool(
   getCache: SearchCache | (() => SearchCache),
   getConfig?: () => WebSearchConfig | null,
+  getBudget?: () => ModelBudget | null,
 ) {
   const resolveCache = (): SearchCache =>
     typeof getCache === "function" ? getCache() : getCache;
   const resolveConfig = (): WebSearchConfig | null => getConfig?.() ?? null;
+  /**
+   * Derive a total fullContent char budget from the active model's token budget.
+   * Uses 50% of maxContentTokens (chars ÷ 4 heuristic) as the aggregate cap,
+   * so a search response can never consume more than half the model's content
+   * budget on inline fullContent alone.
+   */
+  const resolveTotalContentBudget = (): number => {
+    const budget = getBudget?.();
+    if (!budget) return DEFAULT_TOTAL_FULL_CONTENT_CHARS;
+    return Math.max(10_000, Math.floor((budget.maxContentTokens * 4) * 0.5));
+  };
 
   return {
     name: "web_search",
@@ -118,20 +131,22 @@ export function createSearchTool(
       const config = resolveConfig();
 
       // ── Apply config defaults ─────────────────────────────────────────────
-      // defaultProvider: apply to registry so getProvider() respects it.
-      if (config?.defaultProvider && config.defaultProvider !== "auto") {
-        try { registry.setDefaultProvider(config.defaultProvider); } catch { /* unregistered, ignore */ }
-      }
       const configMaxResults = config?.maxResults ?? 5;
       const configMaxInlineChars = config?.maxInlineContentChars ?? 30_000;
+      const totalContentBudget = resolveTotalContentBudget();
 
       // ── Batch mode: queries[] ─────────────────────────────────────────────
       // Run multiple queries in parallel against the same provider(s),
       // then deduplicate across results using the same aggregator as multi-provider.
       if (params.queries && params.queries.length >= 2) {
         const batchQueries = params.queries;
+        const batchConfigDefault =
+          config?.defaultProvider && config.defaultProvider !== "auto"
+            ? (config.defaultProvider as ProviderName)
+            : undefined;
         const batchProvider =
           (params.provider as ProviderName | undefined) ??
+          batchConfigDefault ??
           suggestProvider(batchQueries[0] ?? "");
         const batchOptions = {
           maxResults: params.max_results ?? configMaxResults,
@@ -145,7 +160,7 @@ export function createSearchTool(
 
         if (batchCached) {
           return {
-            content: [{ type: "text" as const, text: formatSearchResults(batchCached, batchProvider, configMaxInlineChars) }],
+            content: [{ type: "text" as const, text: formatSearchResults(batchCached, batchProvider, configMaxInlineChars, totalContentBudget) }],
             details: {
               queries: batchQueries,
               providers: [batchProvider],
@@ -181,7 +196,7 @@ export function createSearchTool(
         cache.evictExpired();
 
         return {
-          content: [{ type: "text" as const, text: formatSearchResults(aggregated.results, aggregated.meta.providers, configMaxInlineChars) }],
+          content: [{ type: "text" as const, text: formatSearchResults(aggregated.results, aggregated.meta.providers, configMaxInlineChars, totalContentBudget) }],
           details: {
             queries: batchQueries,
             providers: aggregated.meta.providers as ProviderName[],
@@ -223,7 +238,7 @@ export function createSearchTool(
         const cached = cache.get(cacheKey);
 
         if (cached) {
-          const formatted = formatSearchResults(cached, requestedProviders, configMaxInlineChars);
+          const formatted = formatSearchResults(cached, requestedProviders, configMaxInlineChars, totalContentBudget);
           return {
             content: [{ type: "text" as const, text: formatted }],
             details: {
@@ -258,6 +273,7 @@ export function createSearchTool(
                 aggregated.results,
                 aggregated.meta.providers,
                 configMaxInlineChars,
+                totalContentBudget,
               ),
             },
           ],
@@ -277,8 +293,14 @@ export function createSearchTool(
       // Explicit provider param = no fallback (user made a deliberate choice).
       // Auto-selected = run fallback chain so a missing/failing primary
       // degrades to the next available provider automatically.
+      // Resolve the primary provider without mutating global registry state.
+      // defaultProvider config applies here as a per-call read, not a write.
+      const configDefault =
+        config?.defaultProvider && config.defaultProvider !== "auto"
+          ? (config.defaultProvider as ProviderName)
+          : undefined;
       const primaryProvider =
-        singleProvider ?? requestedProviders?.[0] ?? suggestProvider(params.query);
+        singleProvider ?? requestedProviders?.[0] ?? configDefault ?? suggestProvider(params.query);
 
       // Cache lookup: try the primary provider's key first.
       // If a fallback answered last time, its key will be used on the second call
@@ -290,7 +312,7 @@ export function createSearchTool(
       if (cached) {
         return {
           content: [
-            { type: "text" as const, text: formatSearchResults(cached, primaryProvider, configMaxInlineChars) },
+            { type: "text" as const, text: formatSearchResults(cached, primaryProvider, configMaxInlineChars, totalContentBudget) },
           ],
           details: {
             query: params.query,
@@ -336,7 +358,7 @@ export function createSearchTool(
         content: [
           {
             type: "text" as const,
-            text: formatSearchResults(response.results, response.provider, configMaxInlineChars),
+            text: formatSearchResults(response.results, response.provider, configMaxInlineChars, totalContentBudget),
           },
         ],
         details: {

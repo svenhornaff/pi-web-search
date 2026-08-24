@@ -116,9 +116,11 @@ export class ProviderRegistry {
     let lastError: unknown;
     for (const name of names) {
       try {
-        await this.limiters.get(name)?.acquire();
+        await this.limiters.get(name)?.acquire(signal);
         return await this.getProvider(name).search(query, options, signal);
       } catch (error) {
+        // If the signal was aborted, stop the fallback chain immediately.
+        if (signal?.aborted) throw error;
         lastError = error;
       }
     }
@@ -139,7 +141,7 @@ export class ProviderRegistry {
   ): Promise<SearchResponse[]> {
     const results = await Promise.allSettled(
       names.map(async (name) => {
-        await this.limiters.get(name)?.acquire();
+        await this.limiters.get(name)?.acquire(signal);
         return this.getProvider(name).search(query, options, signal);
       }),
     );

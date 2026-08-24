@@ -11,8 +11,10 @@ function policy(allow: string[], deny: string[]): DomainPolicy {
 
 describe("validateFetchUrl()", () => {
   test("accepts public HTTPS URLs", async () => {
-    const url = await validateFetchUrl("https://example.com/path");
+    const { url, resolvedIp } = await validateFetchUrl("https://example.com/path");
     assert.equal(url.hostname, "example.com");
+    // resolvedIp should be a non-empty string (actual IP depends on DNS)
+    assert.ok(typeof resolvedIp === "string" && resolvedIp.length > 0);
   });
 
   test("rejects non-HTTPS schemes", async () => {

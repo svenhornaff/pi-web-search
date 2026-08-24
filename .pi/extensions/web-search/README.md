@@ -88,7 +88,7 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 ```json
 {
   "defaultProvider": "auto",
-  "fallbackOrder": ["exa", "brave", "tavily"],
+  "fallbackOrder": ["brave", "exa", "tavily"],
   "maxResults": 5,
   "maxInlineContentChars": 30000
 }
@@ -96,8 +96,8 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `defaultProvider` | `"auto"` \| `"exa"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn’t specify one. `auto` = query heuristic; other values set the registry default directly. |
-| `fallbackOrder` | `string[]` | `["exa","brave","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
+| `defaultProvider` | `"auto"` \| `"exa"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn't specify one. `auto` = query heuristic; other values set the registry default directly. |
+| `fallbackOrder` | `string[]` | `["brave","exa","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
 | `domainPolicy.allow` | `string[]` | `[]` | If non-empty, only these domains allowed in `web_fetch`. Suffix match: `"example.com"` matches `foo.example.com`. |
 | `domainPolicy.deny` | `string[]` | `[]` | Always denied. Deny wins over allow on conflict. |
 | `maxResults` | number (1–20) | `5` | Default result count. |

@@ -5,6 +5,14 @@
 import type { ExtractedContent, ModelBudget } from "./types.js";
 import type { SearchResult } from "./providers/base.js";
 
+/**
+ * Total inline fullContent budget across all results in one web_search response.
+ * Default: 25% of a 128K-token model's content budget as a conservative cap.
+ * Prevents five Tavily/Exa results at 30K chars each (~150K chars) from
+ * overwhelming the context on a single search call.
+ */
+export const DEFAULT_TOTAL_FULL_CONTENT_CHARS = 150_000;
+
 /** Per-result fullContent cap default: ~8k tokens ≈ 30k chars */
 const DEFAULT_MAX_FULL_CONTENT_CHARS = 30_000;
 
@@ -25,13 +33,31 @@ export function formatSearchResults(
   results: SearchResult[],
   providers: string | string[],
   maxInlineContentChars = DEFAULT_MAX_FULL_CONTENT_CHARS,
+  totalFullContentBudgetChars = DEFAULT_TOTAL_FULL_CONTENT_CHARS,
 ): string {
   if (results.length === 0) return "No results found.";
   const providerLabel = Array.isArray(providers)
     ? providers.join(", ")
     : providers;
+
+  // Apply a total budget across all results' fullContent so a batch of
+  // content-rich results can't silently exceed the model's context window.
+  let remainingBudget = totalFullContentBudgetChars;
+  const formatted = results.map((r, i) => {
+    if (!r.fullContent || remainingBudget <= 0) {
+      // No fullContent budget left — format without inline content.
+      return formatResult({ ...r, fullContent: undefined }, i, maxInlineContentChars);
+    }
+    const allowed = Math.min(r.fullContent.length, remainingBudget, maxInlineContentChars);
+    const trimmed = r.fullContent.length > allowed
+      ? r.fullContent.slice(0, allowed) + "\n\n[...truncated — use web_fetch for full content]"
+      : r.fullContent;
+    remainingBudget -= allowed;
+    return formatResult({ ...r, fullContent: trimmed }, i, allowed + 100 /* already trimmed */);
+  });
+
   return (
-    results.map((r, i) => formatResult(r, i, maxInlineContentChars)).join("\n\n") +
+    formatted.join("\n\n") +
     `\n\n---\n**Search provider${Array.isArray(providers) && providers.length > 1 ? "s" : ""}**: ${providerLabel}`
   );
 }
