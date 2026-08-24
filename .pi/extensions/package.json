@@ -1,0 +1,35 @@
+{
+  "name": "pi-extensions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint web-search/src/",
+    "lint:fix": "eslint web-search/src/ --fix",
+    "test": "node --import ./hooks/ts-resolve.mjs --experimental-strip-types --test web-search/tests/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "js-tiktoken": "^1.0.21",
+    "linkedom": "^0.18.12",
+    "pdf-parse": "^2.4.5",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@eslint/js": "^9.0.0",
+    "@sinclair/typebox": "^0.34.0",
+    "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.6",
+    "eslint": "^9.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@sinclair/typebox": "*",
+    "typebox": "*"
+  }
+}

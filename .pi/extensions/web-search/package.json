@@ -1,0 +1,22 @@
+{
+  "name": "web-search",
+  "version": "0.5.1",
+  "description": "Web search and content extraction extension for Pi coding agent (Brave + Tavily)",
+  "author": "Brooklyn42",
+  "license": "MIT",
+  "keywords": ["pi-package", "web-search"],
+  "type": "module",
+  "scripts": {
+    "typecheck":    "cd .. && npm run typecheck",
+    "lint":         "cd .. && npm run lint",
+    "lint:fix":     "cd .. && npm run lint:fix",
+    "test":         "cd .. && npm run test",
+    "check:version": "node scripts/check-version.mjs",
+    "check":        "npm run check:version && cd .. && npm run check"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

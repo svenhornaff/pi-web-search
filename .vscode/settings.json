@@ -1,0 +1,70 @@
+{
+  "terminal.integrated.profiles.osx": {
+    "zsh": {
+      "path": "/bin/zsh",
+      "args": [
+        "-l",
+        "-i"
+      ]
+    }
+  },
+  // ---------- GLOBAL FORMATTING ----------
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "prettier.tabWidth": 2,
+  "prettier.useTabs": false,
+  "prettier.htmlWhitespaceSensitivity": "ignore",
+  "prettier.bracketSameLine": false,
+  "prettier.printWidth": 80,
+  // ---------- PYTHON ----------
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4
+  },
+  // ---------- HTML ----------
+  // Use Prettier for HTML instead of the built-in HTML formatter
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  // ---------- JINJA / TEMPLATES ----------
+  // Configure Jinja2 template support
+  "material-icon-theme.languages.associations": {
+    "jinja-html": "html"
+  },
+  "files.associations": {
+    "*.html": "jinja-html"
+  },
+  "emmet.includeLanguages": {
+    "jinja2": "html",
+    "jinja-html": "html"
+  },
+  // Disable auto-formatting for Jinja templates to prevent syntax breaking
+  "[jinja-html]": {
+    "editor.defaultFormatter": "vscode.html-language-features",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  // ---------- CSS ----------
+  // Prettier already formats CSS well; keep your preference explicit
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "workbench.editor.showIcons": true,
+  "material-icon-theme.activeIconPack": "none",
+  "material-icon-theme.opacity": 0.9,
+  "material-icon-theme.saturation": 0.8,
+  "workbench.colorCustomizations": {
+    "editor.background": "#1f2020",
+    "editor.foreground": "#f9f4f4",
+    "terminal.background": "#1f2020",
+    "sideBar.background": "#1f2020"
+  },
+  "python.terminal.activateEnvironment": true,
+  "git.ignoreLimitWarning": true
+}
