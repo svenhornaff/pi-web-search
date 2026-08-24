@@ -210,11 +210,16 @@ of `fullContent` included inline per `web_search` result. Does not affect
 `npm audit --audit-level=high` step added to CI workflow. Smoke-install already
 added in Phase 1.2. Coverage and CodeQL deferred.
 
-### ~~5.3~~ ✅ Fixed v1.4.0 — Governance
+### ~~5.3~~ ✅ Fixed v1.4.0 + post-release action — Governance
 
-CI `pull_request` trigger narrowed to `["main", "develop"]` so PRs targeting
-main are gated by the check. Branch protection must be enabled in GitHub repo
-settings (Settings → Branches → require `web-search check` to pass).
+- CI `pull_request` trigger narrowed to `["main", "develop"]`.
+- `main` fast-forwarded to `develop` (v1.4.0) and pushed.
+- Branch protection applied via GitHub API (`gh api PUT /branches/main/protection`):
+  - Required status check: `check` (the CI job name), strict mode
+  - Force-pushes: disabled
+  - Deletions: disabled
+  - No PR review requirement (solo project)
+- `main` is now the real default branch, CI-gated, not just a parallel copy.
 
 ---
 
