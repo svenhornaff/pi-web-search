@@ -86,7 +86,20 @@ export function parseMarkdownSections(
 export function rankSections(
   sections: Section[],
   hints: RankingHints,
+  promptHint?: string,
 ): Section[] {
+  // Pre-compute prompt tokens for lexical boost (answer mode).
+  // Split the prompt into meaningful words (3+ chars, de-duped) and check each
+  // against section title + content. Simple lexical overlap — no embeddings.
+  const promptTokens: string[] = promptHint
+    ? [...new Set(
+        promptHint
+          .toLowerCase()
+          .split(/\W+/)
+          .filter((w) => w.length >= 3),
+      )]
+    : [];
+
   return sections.map((section) => {
     let rank = 100; // Base rank
 
@@ -95,6 +108,7 @@ export function rankSections(
 
     // Keyword matching
     const lowerTitle = section.title.toLowerCase();
+    const lowerContent = section.content.toLowerCase();
 
     // Prioritize important sections
     for (const keyword of hints.prioritize) {
@@ -124,6 +138,18 @@ export function rankSections(
     // Boost sections with tables
     if (section.content.includes("|")) {
       rank += 15;
+    }
+
+    // Answer-mode boost: sections whose title or content matches prompt words
+    // are surfaced first. Each matching token contributes up to +20 (capped at
+    // +60 total so a very long prompt doesn't overwhelm structural signals).
+    if (promptTokens.length > 0) {
+      let promptBoost = 0;
+      for (const token of promptTokens) {
+        if (lowerTitle.includes(token)) promptBoost += 20;
+        else if (lowerContent.includes(token)) promptBoost += 10;
+      }
+      rank += Math.min(promptBoost, 60);
     }
 
     return { ...section, rank };

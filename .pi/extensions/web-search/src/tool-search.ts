@@ -280,6 +280,10 @@ export function createSearchTool(
       const primaryProvider =
         singleProvider ?? requestedProviders?.[0] ?? suggestProvider(params.query);
 
+      // Cache lookup: try the primary provider's key first.
+      // If a fallback answered last time, its key will be used on the second call
+      // (see post-fallback cache.set below) — so a cold miss here is expected
+      // when the primary was never the actual answerer.
       const cacheKey = cache.key(params.query, [primaryProvider], options);
       const cached = cache.get(cacheKey);
 
@@ -318,7 +322,14 @@ export function createSearchTool(
         options,
         signal,
       );
-      cache.set(cacheKey, response.results);
+
+      // Key the cache entry under the provider that actually answered,
+      // not the one that was asked first. If Exa failed and Brave answered,
+      // the cache entry is keyed as Brave — so a subsequent hit correctly
+      // reports Brave as the source, not Exa.
+      const actualProvider = response.provider as ProviderName;
+      const actualCacheKey = cache.key(params.query, [actualProvider], options);
+      cache.set(actualCacheKey, response.results);
       cache.evictExpired();
 
       return {

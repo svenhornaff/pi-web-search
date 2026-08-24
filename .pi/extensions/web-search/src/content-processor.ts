@@ -53,6 +53,7 @@ export async function processContent(
   budget: ModelBudget,
   counter: TokenCounter,
   cwd?: string,
+  promptHint?: string,
 ): Promise<ExtractedContent> {
   // Step 1: Extract clean markdown
   const extracted0 = await extractMarkdown(html, url);
@@ -86,8 +87,8 @@ export async function processContent(
   // Step 2: Parse into sections
   const sections = parseMarkdownSections(markdown, budget.provider);
 
-  // Step 3: Rank sections by importance
-  const rankedSections = rankSections(sections, DEFAULT_RANKING_HINTS);
+  // Step 3: Rank sections by importance (with optional prompt-lexical boost)
+  const rankedSections = rankSections(sections, DEFAULT_RANKING_HINTS, promptHint);
 
   // Step 4: Select sections within token budget (shared implementation)
   const selected = await selectSections(
@@ -105,6 +106,9 @@ export async function processContent(
   return {
     summary: excerpt,
     mainContent: selected.markdown,
+    // Preserve the full pre-truncation markdown so ContentStore can serve it
+    // without a second network round-trip. Only set when actually truncated.
+    ...(selected.truncated ? { fullMarkdown: markdown } : {}),
     metadata: {
       title,
       url,

@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.2.0] — 2026-08-24
+
+### Fixed
+
+- **2.1 — `get_fetch_content` now stores full pre-truncation content**:
+  Previously `tool-fetch.ts` stored `extracted.mainContent` (the already
+  budget-truncated text) in `ContentStore`, so `get_fetch_content` handed
+  back the same truncated text a second time. Fix:
+  - `ExtractedContent` gains `fullMarkdown?: string` — set by
+    `processContent()` when `selected.truncated` is true, holding the
+    complete pre-selection markdown.
+  - `maybeStoreHandle()` helper centralises handle creation and stores
+    `fullMarkdown` (falling back to `mainContent` for PDF paths that
+    don’t produce it yet).
+  - Handle creation extended to PDF and GitHub-specialised response paths
+    (was HTML-only). All three paths now call `maybeStoreHandle()`.
+
+- **2.2 — Cache key now uses the actual answering provider after fallback**:
+  When `searchWithFallback` fell back from Exa to Brave, the result was
+  cached under Exa’s key — so the next cached hit incorrectly claimed Exa
+  as the source. Fix: cache is keyed under `response.provider` (the actual
+  answerer) after `searchWithFallback` returns, not under `primaryProvider`
+  (the one that was asked first).
+
+- **2.3 — Answer mode now actually changes section selection**:
+  `applyAnswerMode()` previously only prepended a header; the prompt never
+  reached `rankSections()`. Fix: `prompt` is threaded through
+  `processContent()` → `rankSections()` as `promptHint`. Each word (3+
+  chars) that appears in a section’s title (+20) or body (+10) boosts its
+  rank, capped at +60, so answer-mode calls genuinely surface the most
+  relevant sections rather than just relabelling the same output.
+
+- **4.2 — Fallback test now tests real fallback**:
+  The previous test called `execute()` with `provider: "brave"` (explicit,
+  single-entry chain — no fallback) and contained its own admission it
+  proved nothing. Replaced with two tests using an isolated `ProviderRegistry`
+  with a keyless Exa that throws, asserting:
+  (1) `searchWithFallback` moves to Brave and `response.provider === "brave"`;
+  (2) the cache entry is keyed under `"brave"`, not `"exa"` (regression test
+  for the 2.2 fix).
+
+- **4.3 — Fallback tests use isolated registry**:
+  The new fallback tests construct their own `new ProviderRegistry()` rather
+  than mutating the shared singleton, matching the isolation pattern already
+  used in `registry.test.ts`.
+
+### Changed
+
+- `rankSections()` in `section-parser.ts` accepts optional `promptHint?:
+  string`. When provided, words from the hint boost matching sections’ rank.
+  Backward-compatible — no call-sites changed except through
+  `processContent()`.
+- `processContent()` accepts optional `promptHint?: string`, passed to
+  `rankSections()`. Backward-compatible — all existing call-sites unchanged.
+
+---
+
 ## [1.1.0] — 2026-08-24
 
 ### Fixed

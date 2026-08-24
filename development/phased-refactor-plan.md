@@ -73,15 +73,21 @@ Cheap, low-risk, and touches the exact file (`package.json`) already being edite
 
 **Why second:** these aren't missing features, they're features that exist, are documented, and don't do what the documentation says. That's worse for trust than an honest gap.
 
-### 2.1 `get_fetch_content` returns truncated content, not full content
+### ~~2.1~~ ✅ Fixed v1.2.0 — `get_fetch_content` returns truncated content, not full content
+
+**Was:**
 
 `content-processor.ts`'s `processContent()` returns `mainContent: selected.markdown` — the budget-*selected*, already-truncated text. The pre-truncation `markdown` variable is only ever written to `spillover.ts`, never returned. `tool-fetch.ts` then stores `extracted.mainContent` into `ContentStore`, so `get_fetch_content({ handle })` hands back the same truncated text a second time — not the full page it advertises.
 
 **Fix:** `processContent()` needs to return (or `tool-fetch.ts` needs to separately capture) the untruncated `markdown` before section-selection, and store *that* in `ContentStore` when `selected.truncated` is true. The spillover-file and in-memory-store paths should read from the same source of truth — right now they diverge silently.
 
-**Also affected:** handles are only created on the generic HTML path. Truncated PDF and GitHub-specialized responses (`github-handler.ts`) don't get a handle at all — `get_fetch_content` silently can't help there. Extend handle creation to those paths in the same pass.
+**Fixed:** `ExtractedContent.fullMarkdown` added; `maybeStoreHandle()` helper stores it; handle creation extended to PDF+GitHub paths.
 
-### 2.2 Fallback results are cached under the wrong provider's key
+**Was (original):** handles were HTML-only.
+
+### ~~2.2~~ ✅ Fixed v1.2.0 — Fallback results are cached under the wrong provider's key
+
+**Was:**
 
 In `tool-search.ts`, the cache key is built from `primaryProvider` (the requested or auto-selected provider) *before* `registry.searchWithFallback()` runs:
 
@@ -94,9 +100,11 @@ cache.set(cacheKey, response.results);   // ← stored under primaryProvider's k
 
 If `primaryProvider` fails and a later entry in the chain succeeds, the result is correct and correctly labeled on the *first* (uncached) response — but the cache entry itself is keyed and, on the next hit, formatted as if it came from `primaryProvider`. If Exa is down and Brave answers, a cached hit later claims the results are from Exa. Worse: if Exa later recovers, the cache will keep serving stale Brave-sourced results under Exa's identity until the entry expires.
 
-**Fix:** key the cache entry (and format the cached-hit response) using `response.provider`, the provider that actually answered — not the one that was asked first. `SearchCache`'s key function may need the actual provider passed in after the fact, or the set/format calls reordered so the real provider is known before either happens.
+**Fixed:** `cache.set` now uses `response.provider` (actual answerer), not `primaryProvider`.
 
-### 2.3 "Answer mode" doesn't use the prompt for extraction
+### ~~2.3~~ ✅ Fixed v1.2.0 — "Answer mode" doesn't use the prompt for extraction
+
+**Was:**
 
 `applyAnswerMode()` in `tool-fetch.ts` prepends a `> **Question**: {prompt}` header to output that was computed identically to plain `extract` mode — `prompt` never reaches `rankSections()` or `selectSections()`. The tool's own `promptGuidelines` claim mode: "answer" gets "sections most relevant to a specific question instead of the full page," which isn't true today.
 
@@ -104,7 +112,7 @@ If `primaryProvider` fails and a later entry in the chain succeeds, the result i
 - **(a) Make it real:** thread `prompt` into `rankSections()` as a boost signal (simple keyword/lexical overlap between prompt and section text is enough for v1 — no embeddings needed) so answer mode actually changes which sections are selected, not just how they're labeled.
 - **(b) Rename it to match reality:** if (a) is deferred, rename the mode and its description to something honest (e.g. `mode: "framed"`) and drop the "focuses extraction" language until it's true.
 
-(a) is the better long-term fix and was already scoped in the original roadmap's Phase 7 — do it here instead of shipping a second misleading label.
+**Fixed:** `prompt` threaded into `rankSections()` as `promptHint`; lexical overlap boosts matching sections' rank (+20 title, +10 body, capped +60).
 
 ---
 
@@ -153,15 +161,19 @@ Unchanged from earlier reviews: `validateFetchUrl()` resolves the hostname once,
 
 Covered under 1.2 — listed here too because it's a testing-infrastructure change as much as a packaging fix. Belongs in CI as a permanent step, not a one-time manual check.
 
-### 4.2 Fix the fallback test that doesn't test fallback
+### ~~4.2~~ ✅ Fixed v1.2.0 — Fix the fallback test that doesn't test fallback
+
+**Was:**
 
 `tests/tool-search.test.ts`'s "falls through to second provider when first fails" test calls `execute()` with an explicit `provider: "brave"` — which the code's own logic treats as a single-entry chain, no fallback. The test contains its own admission: `// We can't easily inject the registry — but we can verify the fallback by testing with an explicit brave provider (no fallback scenario)`. It currently proves nothing about fallback behavior.
 
-**Fix:** now that Phase 0 established the pattern for injecting test keys into the shared singleton, use the same approach here — stub the primary provider's `fetch()` to fail, omit `provider:` from the params so `suggestProvider()` picks a primary and the real fallback chain runs, and assert the response came from the secondary provider.
+**Fixed:** two new tests with isolated `ProviderRegistry`; keyless Exa throws, Brave answers; assert `response.provider === "brave"` and cache key is `"brave"`.
 
-### 4.3 Singleton test isolation (minor, worth tracking)
+### ~~4.3~~ ✅ Fixed v1.2.0 — Singleton test isolation
 
-The Phase 0 fix mutates the shared `registry` singleton (`registry.register("brave", new BraveProvider("test-brave-key"))`) rather than constructing an isolated instance. Fine for the current single-process test run since only this file touches the singleton's search behavior, but it's a latent footgun — a future test file that also imports `registry` inherits whatever the last-run file left in it. `registry.test.ts` already shows the cleaner pattern (isolated `new ProviderRegistry()` instances). Worth a follow-up to migrate `tool-search.test.ts` to the same isolation model once 4.2's rewrite touches the file anyway.
+**Was:**
+
+The Phase 0 fix mutates the shared `registry` singleton (`registry.register("brave", new BraveProvider("test-brave-key"))`) rather than constructing an isolated instance. Fine for the current single-process test run since only this file touches the singleton's search behavior, but it's a latent footgun — a future test file that also imports `registry` inherits whatever the last-run file left in it. `registry.test.ts` already shows the cleaner pattern (isolated `new ProviderRegistry()` instances). **Fixed:** fallback tests use `new ProviderRegistry()` instances.
 
 ### 4.4 Missing coverage from the original review, still open
 

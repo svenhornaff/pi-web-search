@@ -100,3 +100,4 @@ This project has shipped regressions where the surface and the docs disagreed â€
 
 ## Rules 
 1. never work outside this workspace `~/Workspace/pi-web-search` in case a `tmp` folder is needed always do in the workspace root
+2. 

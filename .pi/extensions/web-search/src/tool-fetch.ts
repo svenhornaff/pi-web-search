@@ -4,7 +4,7 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { ModelBudget } from "./types.js";
+import type { ModelBudget, ExtractedContent } from "./types.js";
 import type { TokenCounter } from "./token-counter.js";
 import { effectiveContentBudget } from "./token-budget.js";
 import { processContent } from "./content-processor.js";
@@ -16,6 +16,32 @@ import { matchGitHubUrl, fetchGitHub } from "./github-handler.js";
 import { checkDomainPolicy } from "./ssrf.js";
 import type { WebSearchConfig } from "./config.js";
 import type { ContentStore } from "./content-store.js";
+
+/**
+ * Store a handle in ContentStore when content was truncated.
+ * Stores `extracted.fullMarkdown` (pre-truncation) rather than `mainContent`
+ * (already-truncated) so get_fetch_content returns the real full text.
+ */
+function maybeStoreHandle(
+  extracted: ExtractedContent,
+  url: string,
+  getStore: (() => ContentStore) | undefined,
+): void {
+  if (!extracted.metadata.truncated || !getStore) return;
+  const store = getStore();
+  // Use fullMarkdown (pre-truncation) when available; fall back to mainContent
+  // for paths (e.g. PDF) that don't set fullMarkdown yet.
+  const content = extracted.fullMarkdown ?? extracted.mainContent;
+  const handle = store.store(url, content, extracted.metadata.title);
+  extracted.metadata.spillover = extracted.metadata.spillover ?? {
+    path: `[handle:${handle}]`,
+    format: "markdown",
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    totalSections: extracted.metadata.sections.length,
+    excludedSections: extracted.metadata.sections.filter((s) => !s.included).map((s) => s.title),
+  };
+  (extracted.metadata as Record<string, unknown>)["handle"] = handle;
+}
 
 interface FetchResult {
   content: Array<{ type: "text"; text: string }>;
@@ -130,6 +156,7 @@ export function createFetchTool(
       if (isPdf) {
         const buffer = await readBoundedArrayBuffer(response);
         const extracted = await extractPDF(buffer, response.url, budget, counter, cwd);
+        maybeStoreHandle(extracted, response.url, getStore);
         const result = buildFetchResponse(response.url, extracted, budget) as FetchResult;
         return isAnswerMode ? applyAnswerMode(result, params.prompt ?? "") : result;
       }
@@ -149,8 +176,10 @@ export function createFetchTool(
             budget,
             counter,
             cwd,
+            isAnswerMode ? (params.prompt ?? undefined) : undefined,
           );
           ghExtracted.metadata.title = ghResult.title;
+          maybeStoreHandle(ghExtracted, ghResult.url, getStore);
           const base = buildFetchResponse(ghResult.url, ghExtracted, budget) as FetchResult;
           const ghFinal = { ...base, details: { ...base.details, githubStrategy: ghResult.strategy } };
           return isAnswerMode ? applyAnswerMode(ghFinal, params.prompt ?? "") : ghFinal;
@@ -159,22 +188,15 @@ export function createFetchTool(
       }
 
       const html = await readBoundedText(response);
-      const extracted = await processContent(html, response.url, budget, counter, cwd);
-
-      // Store full content when truncated so get_fetch_content can retrieve it.
-      if (extracted.metadata.truncated && getStore) {
-        const store = getStore();
-        const handle = store.store(response.url, extracted.mainContent, extracted.metadata.title);
-        extracted.metadata.spillover = extracted.metadata.spillover ?? {
-          path: `[handle:${handle}]`,
-          format: "markdown",
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-          totalSections: extracted.metadata.sections.length,
-          excludedSections: extracted.metadata.sections.filter((s) => !s.included).map((s) => s.title),
-        };
-        (extracted.metadata as Record<string, unknown>)["handle"] = handle;
-      }
-
+      const extracted = await processContent(
+        html,
+        response.url,
+        budget,
+        counter,
+        cwd,
+        isAnswerMode ? (params.prompt ?? undefined) : undefined,
+      );
+      maybeStoreHandle(extracted, response.url, getStore);
       const result = buildFetchResponse(response.url, extracted, budget) as FetchResult;
       return isAnswerMode ? applyAnswerMode(result, params.prompt ?? "") : result;
     },

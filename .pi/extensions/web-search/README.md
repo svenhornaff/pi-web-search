@@ -180,7 +180,7 @@ cd .pi/extensions/web-search && npm install
 | Parameter | Type | Notes |
 |-----------|------|-------|
 | `url` | string | Must include `https://` |
-| `mode` | `"extract"` \| `"answer"` | Default `extract`. `answer` reframes output around `prompt`. |
+| `mode` | `"extract"` \| `"answer"` | Default `extract`. `answer` boosts sections whose text matches `prompt` keywords, then prepends a relevance header. |
 | `prompt` | string | Question for answer mode. |
 
 ### `get_fetch_content`
