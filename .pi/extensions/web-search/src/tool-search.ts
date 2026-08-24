@@ -117,6 +117,14 @@ export function createSearchTool(
       const params = _params as SearchParams;
       const config = resolveConfig();
 
+      // ── Apply config defaults ─────────────────────────────────────────────
+      // defaultProvider: apply to registry so getProvider() respects it.
+      if (config?.defaultProvider && config.defaultProvider !== "auto") {
+        try { registry.setDefaultProvider(config.defaultProvider); } catch { /* unregistered, ignore */ }
+      }
+      const configMaxResults = config?.maxResults ?? 5;
+      const configMaxInlineChars = config?.maxInlineContentChars ?? 30_000;
+
       // ── Batch mode: queries[] ─────────────────────────────────────────────
       // Run multiple queries in parallel against the same provider(s),
       // then deduplicate across results using the same aggregator as multi-provider.
@@ -126,7 +134,7 @@ export function createSearchTool(
           (params.provider as ProviderName | undefined) ??
           suggestProvider(batchQueries[0] ?? "");
         const batchOptions = {
-          maxResults: params.max_results ?? 5,
+          maxResults: params.max_results ?? configMaxResults,
           freshness: params.freshness as "day" | "week" | "month" | "year" | undefined,
           depth: params.depth as "basic" | "advanced" | undefined,
         };
@@ -137,7 +145,7 @@ export function createSearchTool(
 
         if (batchCached) {
           return {
-            content: [{ type: "text" as const, text: formatSearchResults(batchCached, batchProvider) }],
+            content: [{ type: "text" as const, text: formatSearchResults(batchCached, batchProvider, configMaxInlineChars) }],
             details: {
               queries: batchQueries,
               providers: [batchProvider],
@@ -173,7 +181,7 @@ export function createSearchTool(
         cache.evictExpired();
 
         return {
-          content: [{ type: "text" as const, text: formatSearchResults(aggregated.results, aggregated.meta.providers) }],
+          content: [{ type: "text" as const, text: formatSearchResults(aggregated.results, aggregated.meta.providers, configMaxInlineChars) }],
           details: {
             queries: batchQueries,
             providers: aggregated.meta.providers as ProviderName[],
@@ -188,7 +196,7 @@ export function createSearchTool(
       }
 
       const options = {
-        maxResults: params.max_results ?? 5,
+        maxResults: params.max_results ?? configMaxResults,
         freshness: params.freshness as
           | "day"
           | "week"
@@ -215,7 +223,7 @@ export function createSearchTool(
         const cached = cache.get(cacheKey);
 
         if (cached) {
-          const formatted = formatSearchResults(cached, requestedProviders);
+          const formatted = formatSearchResults(cached, requestedProviders, configMaxInlineChars);
           return {
             content: [{ type: "text" as const, text: formatted }],
             details: {
@@ -249,6 +257,7 @@ export function createSearchTool(
               text: formatSearchResults(
                 aggregated.results,
                 aggregated.meta.providers,
+                configMaxInlineChars,
               ),
             },
           ],
@@ -277,7 +286,7 @@ export function createSearchTool(
       if (cached) {
         return {
           content: [
-            { type: "text" as const, text: formatSearchResults(cached, primaryProvider) },
+            { type: "text" as const, text: formatSearchResults(cached, primaryProvider, configMaxInlineChars) },
           ],
           details: {
             query: params.query,
@@ -316,7 +325,7 @@ export function createSearchTool(
         content: [
           {
             type: "text" as const,
-            text: formatSearchResults(response.results, response.provider),
+            text: formatSearchResults(response.results, response.provider, configMaxInlineChars),
           },
         ],
         details: {

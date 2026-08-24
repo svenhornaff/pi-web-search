@@ -5,15 +5,15 @@
 import type { ExtractedContent, ModelBudget } from "./types.js";
 import type { SearchResult } from "./providers/base.js";
 
-/** Per-result fullContent cap: ~8k tokens ≈ 30k chars */
-const MAX_FULL_CONTENT_CHARS = 30_000;
+/** Per-result fullContent cap default: ~8k tokens ≈ 30k chars */
+const DEFAULT_MAX_FULL_CONTENT_CHARS = 30_000;
 
-function formatResult(r: SearchResult, i: number): string {
+function formatResult(r: SearchResult, i: number, maxFullContentChars = DEFAULT_MAX_FULL_CONTENT_CHARS): string {
   let entry = `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.description}`;
   if (r.fullContent) {
     const body =
-      r.fullContent.length > MAX_FULL_CONTENT_CHARS
-        ? r.fullContent.slice(0, MAX_FULL_CONTENT_CHARS) +
+      r.fullContent.length > maxFullContentChars
+        ? r.fullContent.slice(0, maxFullContentChars) +
           "\n\n[...truncated — use web_fetch for full content]"
         : r.fullContent;
     entry += `\n\n    **Full content**:\n${body}`;
@@ -24,13 +24,14 @@ function formatResult(r: SearchResult, i: number): string {
 export function formatSearchResults(
   results: SearchResult[],
   providers: string | string[],
+  maxInlineContentChars = DEFAULT_MAX_FULL_CONTENT_CHARS,
 ): string {
   if (results.length === 0) return "No results found.";
   const providerLabel = Array.isArray(providers)
     ? providers.join(", ")
     : providers;
   return (
-    results.map(formatResult).join("\n\n") +
+    results.map((r, i) => formatResult(r, i, maxInlineContentChars)).join("\n\n") +
     `\n\n---\n**Search provider${Array.isArray(providers) && providers.length > 1 ? "s" : ""}**: ${providerLabel}`
   );
 }

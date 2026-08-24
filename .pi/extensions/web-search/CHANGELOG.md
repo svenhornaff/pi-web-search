@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.0.1] — 2026-08-24
+
+### Fixed
+
+- **Dead config fields wired** (`defaultProvider`, `maxResults`,
+  `maxInlineContentChars`): all three were validated in `config.ts` and
+  documented in the README but never applied to any call-site. Now:
+  - `defaultProvider`: applied to `registry.setDefaultProvider()` on each
+    `execute()` call when set to a non-`"auto"` value, so the config actually
+    controls which provider is used when the model omits one.
+  - `maxResults`: used as the per-call default (`params.max_results ?? configMaxResults`)
+    in both the single-provider and batch paths of `tool-search.ts`.
+  - `maxInlineContentChars`: threaded into every `formatSearchResults()` call
+    as the third argument (was hardcoded at 30\,000 in `format.ts`). The
+    constant `MAX_FULL_CONTENT_CHARS` is now `DEFAULT_MAX_FULL_CONTENT_CHARS`
+    and is used only when no config value is provided.
+
+### Added
+
+- **`tests/surface.test.ts`**: asserts the exact registered tool/command/shortcut
+  set produced by the extension factory. Turns the "public surface vs docs drift"
+  class of regression (previously hit with the `Ctrl+Shift+W` shortcut) into a CI
+  failure. 3 tests. Per-AGENTS.md: update this file alongside any surface change.
+
+### Infra
+
+- Created `main` branch from `develop` and pushed to GitHub. GitHub can now
+  enforce branch protection on `main`; `develop` remains the working branch.
+
+---
+
 ## [1.0.0] — 2026-08-24
 
 ### Added
