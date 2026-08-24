@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.6.0] — 2026-08-24
+
+### Fixed
+
+- **Phase 2.1 — Three stale doc instances corrected**:
+  - `config.ts` JSDoc header example: `["brave", "tavily"]` → `["brave", "exa", "tavily"]`.
+  - `README.md` Configuration example: `["exa", "brave", "tavily"]` → `["brave", "exa", "tavily"]`.
+  - `tool-fetch.ts` `applyAnswerMode` comment: updated to accurately describe prompt-aware
+    section ranking (added in v1.2.0 §2.3) rather than the pre-fix "just reframes the output" description.
+
+- **Phase 3 — DNS-rebinding TOCTOU closed: resolved-IP pinning**:
+  `validateFetchUrl()` in `ssrf.ts` now returns `{ url, resolvedIp }` (`ValidatedUrl` type)
+  instead of a bare `URL`. `safeFetch()` builds a per-request undici `Agent` whose
+  `connect.lookup` always returns the pre-validated IP, so the socket dials the address
+  `validateFetchUrl` approved — regardless of what a second DNS lookup would return.
+  The TOCTOU window that existed since v0.5.0 is closed. `undici` added as a runtime
+  dependency (`^8.10.0`). README known-limitation note removed; `safe-fetch.ts` header
+  updated to reflect the fix.
+
+- **Phase 4.1 — Abort propagation through the rate limiter**:
+  `RateLimiter.acquire()` now accepts an optional `AbortSignal`. If the signal is already
+  aborted on entry, the promise rejects immediately. If it fires while the caller is
+  queued, the resolver is removed from the queue and the promise rejects — no request fires
+  for a cancelled caller. `searchWithFallback()` and `searchAll()` in `registry.ts`
+  now pass their `signal` to `acquire()`, and `searchWithFallback()` stops the fallback
+  chain immediately on abort.
+
+- **Phase 4.2 — Total output budget for `web_search`**:
+  `formatSearchResults()` in `format.ts` now accepts a `totalFullContentBudgetChars`
+  parameter (default `150_000`). A running budget is consumed per result; once exhausted,
+  subsequent results' `fullContent` is omitted. `createSearchTool()` accepts an optional
+  `getBudget` getter and derives the cap as 50% of `maxContentTokens × 4`, so the budget
+  scales with the active model rather than being a hardcoded constant.
+
+- **Phase 5.4 — `.gitignore` gap closed**:
+  `__pycache__/`, `*.pyc`, `*.pyo` added. The Python-scaffold incident is now non-repeatable.
+
+- **Phase 5.5 — `defaultProvider` config applied without global singleton mutation**:
+  `tool-search.ts` previously called `registry.setDefaultProvider()` inside every `execute()`
+  call — mutating shared state to communicate a per-call read. Removed. `config.defaultProvider`
+  is now applied as a per-call expression in the provider-selection chain (both single and
+  batch paths), with no write to the registry singleton.
+
+### Added
+
+- **Phase 2.2 — `tests/doc-consistency.test.ts`**:
+  Parses the fenced JSON example from README's Configuration section and from `config.ts`'s
+  JSDoc header, and asserts both deep-equal `DEFAULTS` for the fields they show. Handles
+  both plain markdown and JSDoc-prefixed (` * `) fenced blocks. Doc-example drift is now
+  a CI failure instead of a review finding — same class as `check-version.mjs` and
+  `surface.test.ts`.
+
+- **Phase 4.1 — `tests/rate-limiter.test.ts` abort tests**: two new tests —
+  `aborts immediately if signal is already aborted on entry` and
+  `aborts a queued waiter without blocking the queue`.
+
+---
+
 ## [1.5.0] — 2026-08-24
 
 ### Changed

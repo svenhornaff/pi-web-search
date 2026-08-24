@@ -46,4 +46,32 @@ describe("RateLimiter", () => {
     for (let i = 0; i < 5; i++) await limiter.acquire();
     assert.ok(Date.now() - start < 200, "5 acquires at 1000rps should finish quickly");
   });
+
+  test("aborts immediately if signal is already aborted on entry", async () => {
+    const limiter = new RateLimiter({ requestsPerSecond: 1 });
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(
+      () => limiter.acquire(ac.signal),
+      (err: Error) => err.name === "AbortError",
+    );
+  });
+
+  test("aborts a queued waiter without blocking the queue", async () => {
+    // 2 rps = 500ms interval; first acquire resolves immediately.
+    // Second is queued and aborted — should reject before the interval elapses.
+    const limiter = new RateLimiter({ requestsPerSecond: 2 });
+    await limiter.acquire(); // prime the limiter
+
+    const ac = new AbortController();
+    const start = Date.now();
+
+    // Queue the second acquire but abort it immediately
+    const p = limiter.acquire(ac.signal);
+    ac.abort();
+
+    await assert.rejects(() => p, (err: Error) => err.name === "AbortError");
+    // Should reject well before the 500ms interval
+    assert.ok(Date.now() - start < 400, "Abort should resolve quickly, not wait for interval");
+  });
 });

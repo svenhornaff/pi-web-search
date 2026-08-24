@@ -119,7 +119,7 @@ export default function piWebSearch(pi: ExtensionAPI): void {
   });
 
   // ── Tool registration ──────────────────────────────────────────────────
-  pi.registerTool(createSearchTool(() => cache, () => config));
+  pi.registerTool(createSearchTool(() => cache, () => config, () => budget));
   pi.registerTool(
     createFetchTool(
       () => budget,

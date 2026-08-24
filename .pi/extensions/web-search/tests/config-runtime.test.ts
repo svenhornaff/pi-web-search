@@ -182,7 +182,7 @@ describe("config.maxInlineContentChars — truncates fullContent in web_search r
 // ── defaultProvider ─────────────────────────────────────────────────────────
 
 describe("config.defaultProvider — sets registry default", () => {
-  test("defaultProvider: 'tavily' causes registry.getProvider() to return Tavily", async () => {
+  test("defaultProvider: 'tavily' routes the search to Tavily (per-call, no global mutation)", async () => {
     let calledUrl = "";
     stubFetch(async (input) => {
       calledUrl = String(input);
@@ -190,9 +190,6 @@ describe("config.defaultProvider — sets registry default", () => {
         query: "test", results: [{ title: "T", url: "https://t.example.com", content: "c" }],
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
-
-    // Build isolated registry and set default to tavily
-    const reg = makeIsolatedRegistry();
 
     const config: WebSearchConfig = {
       defaultProvider: "tavily",
@@ -202,32 +199,50 @@ describe("config.defaultProvider — sets registry default", () => {
       domainPolicy: { allow: [], deny: [] },
     };
 
-    // Apply defaultProvider to the isolated registry directly (matches
-    // what tool-search.ts does via registry.setDefaultProvider)
-    reg.setDefaultProvider("tavily");
+    const cache = new SearchCache();
+    // No explicit provider param — config.defaultProvider should drive selection
+    const tool = createSearchTool(() => cache, () => config);
+    const result = await (tool as ReturnType<typeof createSearchTool>).execute(
+      "t5",
+      { query: "test query" },  // no explicit provider
+      undefined, undefined, undefined,
+    );
 
-    const defaultProvider = reg.getDefaultProviderName();
-    assert.equal(defaultProvider, "tavily", "config.defaultProvider: 'tavily' should set registry default to tavily");
-
-    // Verify getProvider() with no args returns Tavily's provider
-    const provider = reg.getProvider();
-    assert.equal(provider.name, "tavily");
-
-    void calledUrl; // suppress lint
+    // Tavily URL should have been called
+    assert.ok(calledUrl.includes("tavily"), `Expected Tavily URL, got: ${calledUrl}`);
+    assert.ok(result.details.providers.includes("tavily"));
   });
 
-  test("defaultProvider: 'auto' leaves registry default unchanged (exa)", () => {
-    const reg = makeIsolatedRegistry();
-    // 'auto' means don't call setDefaultProvider — default stays as constructed
+  test("defaultProvider: 'auto' uses heuristic-selected provider", async () => {
+    stubFetch(async (input) => {
+      const url = String(input);
+      // Return appropriate shape based on which provider was called
+      if (url.includes("tavily")) {
+        return new Response(JSON.stringify({
+          query: "test", results: [{ title: "T", url: "https://t.example.com", content: "c" }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ web: { results: [] } }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
     const config: WebSearchConfig = {
       defaultProvider: "auto",
-      fallbackOrder: ["exa", "brave"],
+      fallbackOrder: ["brave", "exa", "tavily"],
       maxResults: 5,
       maxInlineContentChars: 30_000,
       domainPolicy: { allow: [], deny: [] },
     };
-    void config; // config.defaultProvider === 'auto' → no setDefaultProvider call
-    assert.equal(reg.getDefaultProviderName(), "exa");
+
+    const cache = new SearchCache();
+    const tool = createSearchTool(() => cache, () => config);
+    // 'auto' means suggestProvider() selects — just verify it executes without error
+    const result = await (tool as ReturnType<typeof createSearchTool>).execute(
+      "t6",
+      { query: "compare FastAPI vs Flask" },
+      undefined, undefined, undefined,
+    );
+    assert.ok(Array.isArray(result.details.providers));
   });
 });
 

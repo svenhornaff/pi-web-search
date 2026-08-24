@@ -51,8 +51,10 @@ interface FetchResult {
 /**
  * Wrap a fetch result in answer mode: prepend a focused preamble so the
  * model knows these are the most relevant sections for a specific question.
- * Section ranking already surfaces the best content; answer mode just
- * reframes the output and adds a relevance header.
+ * Section ranking is prompt-aware (promptHint lexical boost added in v1.2.0
+ * §2.3) — answer mode threads the prompt through processContent() →
+ * rankSections(), so the highest-scoring sections for the question are
+ * genuinely surfaced, not just relabelled.
  */
 function applyAnswerMode(result: FetchResult, prompt: string): FetchResult {
   const text = result.content[0]?.text ?? "";

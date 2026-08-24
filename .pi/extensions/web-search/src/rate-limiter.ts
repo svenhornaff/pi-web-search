@@ -33,10 +33,31 @@ export class RateLimiter {
   /**
    * Acquire a rate-limit token. Resolves when it is safe to fire a request.
    * Callers should await this before every provider API call.
+   *
+   * If `signal` is provided and already aborted, rejects immediately.
+   * If `signal` fires while queued, the waiter is removed from the queue
+   * and the promise rejects — no request fires for a cancelled caller.
    */
-  acquire(): Promise<void> {
-    return new Promise((resolve) => {
-      this.queue.push(resolve);
+  acquire(signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+
+      const resolver = () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      };
+
+      const onAbort = () => {
+        const idx = this.queue.indexOf(resolver);
+        if (idx !== -1) this.queue.splice(idx, 1);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.queue.push(resolver);
       if (!this.draining) {
         this.drain();
       }

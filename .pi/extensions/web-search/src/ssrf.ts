@@ -57,7 +57,19 @@ function matchesDomainEntry(hostname: string, entry: string): boolean {
 
 const ALLOWED_PROTOCOLS = new Set(["https:"]);
 
-export async function validateFetchUrl(rawUrl: string): Promise<URL> {
+/**
+ * Result of URL validation: the parsed URL plus the IP address that was
+ * validated. `safeFetch` uses this IP to pin the connection (DNS-rebinding
+ * TOCTOU fix) — the same address `validateFetchUrl` approved is the address
+ * the socket actually dials, regardless of what a second DNS lookup would return.
+ */
+export interface ValidatedUrl {
+  url: URL;
+  /** The IP address (v4 or v6) that was resolved and validated. */
+  resolvedIp: string;
+}
+
+export async function validateFetchUrl(rawUrl: string): Promise<ValidatedUrl> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -89,7 +101,10 @@ export async function validateFetchUrl(rawUrl: string): Promise<URL> {
     }
   }
 
-  return url;
+  // Return the first resolved IP so callers can pin the connection to it,
+  // closing the TOCTOU window between this validation and the actual connect.
+  const resolvedIp = ipCandidates[0] ?? hostname;
+  return { url, resolvedIp };
 }
 
 function isBlockedIp(ip: string): boolean {

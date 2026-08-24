@@ -9,7 +9,7 @@
  * ```json
  * {
  *   "defaultProvider": "auto",
- *   "fallbackOrder": ["brave", "tavily"],
+ *   "fallbackOrder": ["brave", "exa", "tavily"],
  *   "maxResults": 5,
  *   "maxInlineContentChars": 30000
  * }
