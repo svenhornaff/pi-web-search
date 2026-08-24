@@ -1,5 +1,66 @@
 # Changelog
 
+## [1.0.0] — 2026-08-24
+
+### Added
+
+- **7.1 — `answer` mode for `web_fetch`**: new optional params `mode: "answer"`
+  and `prompt`. When set, extracted content is reframed with a relevance header
+  citing the question. Section ranking already surfaces the most relevant
+  content; answer mode adds the framing without a second LLM call. Exposed in
+  the tool schema; `details.answerMode: true` and `details.prompt` set.
+
+- **7.2 — `get_fetch_content` tool + `ContentStore`**: third LLM-callable tool
+  that retrieves previously-fetched full page content by session handle. When
+  `web_fetch` truncates a response, it stores the full markdown in `ContentStore`
+  and includes `details.handle` in its response. The model calls
+  `get_fetch_content({ handle })` to retrieve specific content without a second
+  network round-trip. Supports `findText` (window around search term) and
+  `sectionIndex` filtering. 30-minute TTL, cleared on `session_start`.
+
+- **7.3 — Rate limiting (`src/rate-limiter.ts`)**: token-bucket rate limiter
+  wired into `ProviderRegistry.searchWithFallback()` and `searchAll()`. Defaults:
+  Brave 1 req/s, Tavily 5 req/s, Exa 5 req/s. Each provider has an independent
+  limiter; parallel multi-provider calls are limited independently.
+  `setRateLimit()` method added to `ProviderRegistry` for test overrides.
+
+- **7.4 — Domain policy**: `domainPolicy: { allow, deny }` added to
+  `WebSearchConfig`. `checkDomainPolicy()` added to `ssrf.ts` — checked in
+  `tool-fetch.ts` before every `safeFetch()` call. Deny wins on conflict. Suffix
+  matching: `"example.com"` in allow/deny matches `foo.example.com`. Empty
+  allow list = allow all (opt-in restriction).
+
+- **7.5 — RSC/Next.js flight-data parser (`src/rsc-parser.ts`)**: before
+  falling back to Jina Reader, `content-processor.ts` now attempts to extract
+  readable text from Next.js RSC flight data (`self.__next_f.push(...)` inline
+  scripts). Avoids a second network round-trip for Next.js App Router pages that
+  ship content in RSC format rather than plain HTML. Returns null when no
+  flight data is found or extracted text is too short.
+
+- **33 new tests** across 4 new test files:
+  - `tests/rate-limiter.test.ts` — 4 tests (timing, queue order, high-rps)
+  - `tests/domain-policy.test.ts` — 14 tests (empty policy, allow list,
+    deny list, conflict resolution, case-insensitivity)
+  - `tests/content-store.test.ts` — 8 tests (store/get/clear/list/evict/handles)
+  - `tests/rsc-parser.test.ts` — 7 tests (no RSC data, short content, text
+    extraction, type-0 skip, multiple scripts, internal filtering)
+
+### Changed
+
+- **`ProviderRegistry`**: `limiters` map added; `register()` creates a limiter
+  for each provider; `searchWithFallback()` and `searchAll()` await the limiter
+  before each provider call; `setRateLimit()` method added for test overrides.
+- **`WebSearchConfig`**: `domainPolicy` field added (default: `{ allow: [], deny: [] }`).
+- **`tool-fetch.ts`**: `getConfig` getter threaded through for domain policy;
+  `getStore` getter added for `ContentStore` integration; answer mode applied
+  at all three return paths (PDF, GitHub, HTML).
+- **`content-processor.ts`**: RSC parser runs before Jina fallback (step 1b
+  becomes RSC, step 1c becomes Jina).
+- **`tool-search.test.ts`**: rate limits overridden to 1000 req/s on the
+  singleton registry to keep integration tests fast.
+
+---
+
 ## [0.9.0] — 2026-08-24
 
 ### Added

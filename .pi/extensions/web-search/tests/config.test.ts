@@ -36,6 +36,7 @@ describe("loadConfig() — defaults", () => {
     assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]);
     assert.equal(config.maxResults, 5);
     assert.equal(config.maxInlineContentChars, 30_000);
+    assert.deepEqual(config.domainPolicy, { allow: [], deny: [] });
   });
 });
 
@@ -106,6 +107,19 @@ describe("loadConfig() — invalid values fall back to defaults", () => {
     await writeConfig({ fallbackOrder: ["bad1", "bad2"] });
     const config = await loadConfig();
     assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]);
+  });
+
+  test("reads domainPolicy allow + deny lists", async () => {
+    await writeConfig({ domainPolicy: { allow: ["docs.example.com"], deny: ["old.example.com"] } });
+    const config = await loadConfig();
+    assert.deepEqual(config.domainPolicy.allow, ["docs.example.com"]);
+    assert.deepEqual(config.domainPolicy.deny, ["old.example.com"]);
+  });
+
+  test("domainPolicy filters non-string entries", async () => {
+    await writeConfig({ domainPolicy: { allow: ["good.com", 42, null], deny: [] } });
+    const config = await loadConfig();
+    assert.deepEqual(config.domainPolicy.allow, ["good.com"]);
   });
 });
 

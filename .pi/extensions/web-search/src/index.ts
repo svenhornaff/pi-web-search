@@ -19,6 +19,8 @@ import type { TokenCounter } from "./token-counter.js";
 import { SearchCache } from "./search-cache.js";
 import { createSearchTool } from "./tool-search.js";
 import { createFetchTool } from "./tool-fetch.js";
+import { createGetContentTool } from "./tool-get-content.js";
+import { ContentStore } from "./content-store.js";
 import { registry } from "./providers/registry.js";
 import { suggestProvider } from "./provider-selector.js";
 import { cleanExpiredSpillover } from "./spillover.js";
@@ -37,12 +39,14 @@ export default function piWebSearch(pi: ExtensionAPI): void {
   let budget: ModelBudget = buildUnknownBudget();
   let counter: TokenCounter = createTokenCounter("unknown", "unknown");
   const cache = new SearchCache();
+  const store = new ContentStore();
   let config: WebSearchConfig | null = null;
 
   // ── Lifecycle events ────────────────────────────────────────────────────
 
   pi.on("session_start", (_event, ctx) => {
     cache.clear();
+    store.clear();
     // Load (or reload) config each session — picks up edits without restarting Pi.
     loadConfig().then((cfg) => { config = cfg; }).catch(() => {});
     renderSearchWidget(ctx, cache);
@@ -119,6 +123,9 @@ export default function piWebSearch(pi: ExtensionAPI): void {
     createFetchTool(
       () => budget,
       () => counter,
+      () => config,
+      () => store,
     ),
   );
+  pi.registerTool(createGetContentTool(() => store));
 }

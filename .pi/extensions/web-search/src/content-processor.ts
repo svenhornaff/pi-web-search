@@ -14,6 +14,7 @@ import {
 import { selectSections } from "./section-selector.js";
 import { writeSpillover } from "./spillover.js";
 import { safeFetch, readBoundedText } from "./safe-fetch.js";
+import { extractRscContent } from "./rsc-parser.js";
 
 /**
  * Minimum token count to consider extraction "successful".
@@ -58,16 +59,26 @@ export async function processContent(
   const { title } = extracted0;
   let { markdown, excerpt } = extracted0;
 
-  // Step 1b: JS-render fallback via Jina Reader
-  // When extraction yields near-empty content (JS-rendered page, cookie wall,
-  // etc.), try https://r.jina.ai/<url> which handles JS rendering for free.
-  // Only triggered when content is genuinely sparse, not just a small page.
+  // Step 1b: RSC / Next.js flight-data extraction
+  // Try this before Jina: if the page ships RSC flight data, we can extract
+  // content directly from the HTML without a second network round-trip.
+  // Only triggered when the standard extraction yields near-empty content.
   const quickTokenEstimate = Math.ceil(markdown.length / 4);
-  if (quickTokenEstimate < MIN_CONTENT_TOKENS && url.startsWith("https://")) {
+  if (quickTokenEstimate < MIN_CONTENT_TOKENS) {
+    const rscText = extractRscContent(html);
+    if (rscText && Math.ceil(rscText.length / 4) > quickTokenEstimate) {
+      markdown = rscText;
+      if (!excerpt) excerpt = rscText.slice(0, 200).replace(/\n+/g, " ").trim();
+    }
+  }
+
+  // Step 1c: Jina Reader fallback for JS-rendered / cookie-walled pages.
+  // Only triggered when both standard extraction and RSC parsing yield sparse content.
+  const tokenEstimateAfterRsc = Math.ceil(markdown.length / 4);
+  if (tokenEstimateAfterRsc < MIN_CONTENT_TOKENS && url.startsWith("https://")) {
     const jinaMarkdown = await fetchViaJina(url);
-    if (jinaMarkdown && Math.ceil(jinaMarkdown.length / 4) > quickTokenEstimate) {
+    if (jinaMarkdown && Math.ceil(jinaMarkdown.length / 4) > tokenEstimateAfterRsc) {
       markdown = jinaMarkdown;
-      // Re-derive excerpt from Jina content if we didn't have one
       if (!excerpt) excerpt = jinaMarkdown.slice(0, 200).replace(/\n+/g, " ").trim();
     }
   }

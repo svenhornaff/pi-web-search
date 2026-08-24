@@ -8,8 +8,9 @@ The model **autonomously decides** when to search — no `/skill:` invocation ne
 
 | Tool | What it does |
 |------|-------------|
-| `web_search` | Search via Exa, Brave, or Tavily. Provider auto-selected. Supports `queries[]` for parallel multi-angle research with deduplication. |
-| `web_fetch` | Fetch a URL → clean markdown. GitHub URLs routed to raw/API. JS-rendered pages fall back to Jina Reader. Token-budget aware. |
+| `web_search` | Search via Exa, Brave, or Tavily. Provider auto-selected. Supports `queries[]` for parallel multi-angle research with deduplication. Rate-limited per provider. |
+| `web_fetch` | Fetch a URL → clean markdown. GitHub URLs routed to raw/API. RSC + Jina fallback for JS pages. Answer mode. Stores full content by handle when truncated. |
+| `get_fetch_content` | Retrieve full previously-fetched content by handle. Supports `findText` and `sectionIndex` filtering. Lists all handles when called with no args. |
 
 ## Provider Design
 
@@ -97,6 +98,8 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 |-------|------|---------|-------|
 | `defaultProvider` | `"auto"` \| `"exa"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn’t specify one. `auto` = heuristic selection. |
 | `fallbackOrder` | `string[]` | `["exa","brave","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
+| `domainPolicy.allow` | `string[]` | `[]` | If non-empty, only these domains allowed in `web_fetch`. Suffix match: `"example.com"` matches `foo.example.com`. |
+| `domainPolicy.deny` | `string[]` | `[]` | Always denied. Deny wins over allow on conflict. |
 | `maxResults` | number (1–20) | `5` | Default result count. |
 | `maxInlineContentChars` | number (≥1000) | `30000` | Max characters returned inline by `web_fetch` before spillover. |
 
@@ -177,6 +180,16 @@ cd .pi/extensions/web-search && npm install
 | Parameter | Type | Notes |
 |-----------|------|-------|
 | `url` | string | Must include `https://` |
+| `mode` | `"extract"` \| `"answer"` | Default `extract`. `answer` reframes output around `prompt`. |
+| `prompt` | string | Question for answer mode. |
+
+### `get_fetch_content`
+
+| Parameter | Type | Notes |
+|-----------|------|-------|
+| `handle` | string | Handle from `web_fetch` `details.handle`. Omit to list all. |
+| `findText` | string | Return window around this search term. |
+| `sectionIndex` | number | Return only this section (0-based). |
 
 ## Token budgeting
 
@@ -244,6 +257,10 @@ src/
 ├── search-aggregator.ts  — Multi-provider result deduplication and ranking
 ├── provider-selector.ts  — Automatic provider selection heuristics
 ├── github-handler.ts     — GitHub URL routing: blob→raw, tree→API listing, root→README+tree
+├── rsc-parser.ts         — Next.js RSC flight-data extractor (pre-Jina fallback)
+├── rate-limiter.ts       — Token-bucket rate limiter (per-provider)
+├── content-store.ts      — In-session store for truncated fetch content (30-min TTL)
+├── tool-get-content.ts   — get_fetch_content tool definition + execute
 ├── structured-extractor.ts — JSON-LD / OpenGraph / meta extraction
 └── providers/
     ├── base.ts           — SearchProvider interface

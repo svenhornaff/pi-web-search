@@ -7,7 +7,13 @@ import { describe, test, after } from "node:test";
 import { strict as assert } from "node:assert";
 import { createSearchTool } from "../src/tool-search.ts";
 import { SearchCache } from "../src/search-cache.ts";
-import { ProviderRegistry } from "../src/providers/registry.ts";
+import { ProviderRegistry, registry } from "../src/providers/registry.ts";
+
+// Override rate limits to 1000 req/s for tests — the limiter is real but
+// the 1 req/s Brave default would make integration tests unacceptably slow.
+registry.setRateLimit("brave", 1000);
+registry.setRateLimit("tavily", 1000);
+registry.setRateLimit("exa", 1000);
 
 const originalFetch = globalThis.fetch;
 after(() => { globalThis.fetch = originalFetch; });

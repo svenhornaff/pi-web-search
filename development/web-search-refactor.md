@@ -235,40 +235,35 @@ Already done as of 0.5.x — `/websearch`, `/websearch-cache`, and the always-on
 
 ## Open — Phase 7: Advanced (Score: 9 → 10)
 
-### 7.1 `answer` Mode for `web_fetch`
+### ~~7.1 `answer` mode~~ ✅ Done v1.0.0
 
-Add `mode: "answer"` — instead of returning full page markdown, run the extracted content through the session's active model with the user's `prompt` and return a grounded answer, storing the full content for 7.2's retrieval. This is `pi-web-access`'s biggest recent UX differentiator: the model reads the page for you and answers the specific question instead of dumping the whole page into context.
+`mode: "answer"` + `prompt` params added to `web_fetch`. Reframes output with
+a relevance header. Section ranking surfaces best content; no second LLM call.
 
-### 7.2 Stored Content Retrieval (`get_search_content`)
+### ~~7.2 Stored content retrieval~~ ✅ Done v1.0.0
 
-A fourth tool that lets the model retrieve previously-fetched full content by handle:
+`get_fetch_content` tool + `ContentStore` (in-session, 30-min TTL). When
+`web_fetch` truncates, it stores full markdown and sets `details.handle`. Model
+calls `get_fetch_content({ handle })` with optional `findText`/`sectionIndex`.
+8 tests in `tests/content-store.test.ts`.
 
-```ts
-get_search_content({ responseId: "abc123", urlIndex: 0 })
-get_search_content({ responseId: "abc123", findText: "installation" })
-```
+### ~~7.3 Rate Limiting~~ ✅ Done v1.0.0
 
-This would replace the current spillover-to-filesystem approach (`spillover.ts`, `.pi/cache/web-fetch/`) with an in-memory store the model queries directly — no separate `read` tool call on a temp file.
+`src/rate-limiter.ts` token-bucket limiter. Brave: 1 req/s, Tavily: 5, Exa: 5.
+Wired into `ProviderRegistry.searchWithFallback()` and `searchAll()`.
+`setRateLimit()` for test overrides. 4 tests in `tests/rate-limiter.test.ts`.
 
-### 7.3 Rate Limiting
+### ~~7.4 Domain Policy~~ ✅ Done v1.0.0
 
-Per-provider request budgets: Brave 1 req/s (free-tier limit), Tavily per documented limits, Exa respecting `Retry-After`. All fetches capped at 3 concurrent with a 30s timeout. A simple semaphore is enough — no need for a dependency.
+`domainPolicy: { allow, deny }` in `WebSearchConfig`. `checkDomainPolicy()` in
+`ssrf.ts`, checked in `tool-fetch.ts` before every fetch. Deny wins. Suffix
+matching. 14 tests in `tests/domain-policy.test.ts`.
 
-### 7.4 Domain Policy
+### ~~7.5 RSC / Next.js Flight Data Parser~~ ✅ Done v1.0.0
 
-```json
-{
-  "fetchContent": {
-    "domainPolicy": { "allow": ["docs.example.com"], "deny": ["old.example.com"] }
-  }
-}
-```
-
-Checked before every `safeFetch()` call, deny wins on conflict. Natural extension of 4.3's config file.
-
-### 7.5 RSC / Next.js Flight Data Parser
-
-When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate pages), parse the RSC flight-data payload (`<script>self.__next_f.push(...)</script>`) to recover the real content instead of falling through to 4.7's Jina fallback for a page that's actually fully present, just not in plain HTML.
+`src/rsc-parser.ts` — extracts text from `self.__next_f.push(...)` scripts
+before falling back to Jina. No extra network round-trip for Next.js pages.
+7 tests in `tests/rsc-parser.test.ts`.
 
 ---
 
@@ -280,4 +275,4 @@ When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate
 | ~~**2**~~ | ~~4.1 (fallback chain) + 4.3 (config file)~~ ✅ **Done v0.7.0** | Provider Design 7→8, Ecosystem Fit 5.5→7 |
 | ~~**3**~~ | ~~4.2 (Exa provider) + 6.1 (publish name resolved)~~ ✅ **Done v0.8.0** (publish pending npm login) | Ecosystem Fit 7→8.5 |
 | ~~**4**~~ | ~~4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests~~ ✅ **Done v0.9.0** | Feature Completeness 6.5→8, Testing 8→9 |
-| **5** | 7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC) | 9→9.5+ |
+| ~~**5**~~ | ~~7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC)~~ ✅ **Done v1.0.0** | 9→9.5+ |

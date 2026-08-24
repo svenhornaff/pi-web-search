@@ -27,6 +27,21 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ProviderName } from "./providers/registry.js";
 
+/** Domain allow/deny policy for web_fetch outbound requests. */
+export interface DomainPolicy {
+  /**
+   * If non-empty, only these hostnames (or suffixes) are allowed.
+   * Example: ["docs.example.com", "api.example.com"]
+   */
+  allow: string[];
+  /**
+   * These hostnames (or suffixes) are always denied, even if they match allow.
+   * Deny wins on conflict.
+   * Example: ["old.example.com"]
+   */
+  deny: string[];
+}
+
 /** Validated, resolved config — all fields present with defaults applied. */
 export interface WebSearchConfig {
   /** Provider selected when none is specified. "auto" = heuristic. */
@@ -40,6 +55,8 @@ export interface WebSearchConfig {
   maxResults: number;
   /** Maximum inline content characters returned by web_fetch before spillover. */
   maxInlineContentChars: number;
+  /** Optional domain allow/deny policy for web_fetch. */
+  domainPolicy: DomainPolicy;
 }
 
 const DEFAULTS: WebSearchConfig = {
@@ -47,6 +64,7 @@ const DEFAULTS: WebSearchConfig = {
   fallbackOrder: ["exa", "brave", "tavily"],
   maxResults: 5,
   maxInlineContentChars: 30_000,
+  domainPolicy: { allow: [], deny: [] },
 };
 
 const VALID_PROVIDERS: Set<string> = new Set(["exa", "brave", "tavily"]);
@@ -57,6 +75,7 @@ interface RawConfig {
   fallbackOrder?: unknown;
   maxResults?: unknown;
   maxInlineContentChars?: unknown;
+  domainPolicy?: unknown;
 }
 
 /** Interpolate $ENV_VAR references in a string value. */
@@ -120,6 +139,18 @@ export async function loadConfig(): Promise<WebSearchConfig> {
     raw.maxInlineContentChars >= 1000
   ) {
     config.maxInlineContentChars = Math.floor(raw.maxInlineContentChars);
+  }
+
+  // domainPolicy
+  if (raw.domainPolicy && typeof raw.domainPolicy === "object" && !Array.isArray(raw.domainPolicy)) {
+    const dp = raw.domainPolicy as Record<string, unknown>;
+    const allow = Array.isArray(dp["allow"])
+      ? dp["allow"].filter((v): v is string => typeof v === "string")
+      : [];
+    const deny = Array.isArray(dp["deny"])
+      ? dp["deny"].filter((v): v is string => typeof v === "string")
+      : [];
+    config.domainPolicy = { allow, deny };
   }
 
   return config;

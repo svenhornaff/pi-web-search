@@ -8,6 +8,47 @@
 
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import type { DomainPolicy } from "./config.js";
+
+/**
+ * Check a hostname against a domain policy.
+ * Deny wins on conflict (an entry in both allow and deny is denied).
+ * Returns an error message if blocked, or null if allowed.
+ *
+ * Matching rules:
+ *   - Exact match:  "docs.example.com" matches only "docs.example.com"
+ *   - Suffix match: ".example.com" matches "foo.example.com" but not "example.com"
+ */
+export function checkDomainPolicy(hostname: string, policy: DomainPolicy): string | null {
+  const host = hostname.toLowerCase();
+
+  // Deny list checked first — deny wins.
+  for (const entry of policy.deny) {
+    if (matchesDomainEntry(host, entry.toLowerCase())) {
+      return `Domain blocked by deny policy: ${hostname}`;
+    }
+  }
+
+  // If allow list is non-empty, hostname must match at least one entry.
+  if (policy.allow.length > 0) {
+    const allowed = policy.allow.some((entry) => matchesDomainEntry(host, entry.toLowerCase()));
+    if (!allowed) {
+      return `Domain not in allow list: ${hostname}`;
+    }
+  }
+
+  return null; // allowed
+}
+
+function matchesDomainEntry(hostname: string, entry: string): boolean {
+  // Exact match
+  if (hostname === entry) return true;
+  // Suffix match: entry starting with "." matches subdomains
+  if (entry.startsWith(".") && hostname.endsWith(entry)) return true;
+  // Also match "example.com" as a suffix pattern for "*.example.com"
+  if (!entry.startsWith(".") && hostname.endsWith("." + entry)) return true;
+  return false;
+}
 
 const ALLOWED_PROTOCOLS = new Set(["https:"]);
 

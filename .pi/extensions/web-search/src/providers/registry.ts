@@ -11,6 +11,7 @@ import type { SearchProvider, SearchOptions, SearchResponse } from "./base.js";
 import { BraveProvider } from "./brave.js";
 import { TavilyProvider } from "./tavily.js";
 import { ExaProvider } from "./exa.js";
+import { RateLimiter, DEFAULT_RATE_LIMITS } from "../rate-limiter.js";
 
 /** Available provider names */
 export type ProviderName = "exa" | "brave" | "tavily";
@@ -18,6 +19,7 @@ export type ProviderName = "exa" | "brave" | "tavily";
 /** Provider registry singleton */
 export class ProviderRegistry {
   private providers = new Map<ProviderName, SearchProvider>();
+  private limiters = new Map<ProviderName, RateLimiter>();
   private defaultProvider: ProviderName = "exa";
 
   constructor() {
@@ -30,10 +32,14 @@ export class ProviderRegistry {
   }
 
   /**
-   * Register a provider.
+   * Register a provider (and create its rate limiter if not already present).
    */
   register(name: ProviderName, provider: SearchProvider): void {
     this.providers.set(name, provider);
+    if (!this.limiters.has(name)) {
+      const rps = DEFAULT_RATE_LIMITS[name] ?? 5;
+      this.limiters.set(name, new RateLimiter({ requestsPerSecond: rps }));
+    }
   }
 
   /**
@@ -89,12 +95,17 @@ export class ProviderRegistry {
   }
 
   /**
+   * Override the rate limit for a provider (useful in tests).
+   */
+  setRateLimit(name: ProviderName, requestsPerSecond: number): void {
+    this.limiters.set(name, new RateLimiter({ requestsPerSecond }));
+  }
+
+  /**
    * Try providers in order, returning the first success.
+   * Rate-limited: waits for the provider's token-bucket slot before firing.
    * Falls through to the next provider only when the current one throws
    * (missing key, 401, network error, etc.).
-   *
-   * This is the right path for single-provider calls — `getProvider()` only
-   * falls back when the *name* is unregistered, not when search() fails.
    */
   async searchWithFallback(
     names: ProviderName[],
@@ -105,6 +116,7 @@ export class ProviderRegistry {
     let lastError: unknown;
     for (const name of names) {
       try {
+        await this.limiters.get(name)?.acquire();
         return await this.getProvider(name).search(query, options, signal);
       } catch (error) {
         lastError = error;
@@ -115,6 +127,7 @@ export class ProviderRegistry {
 
   /**
    * Run multiple providers in parallel.
+   * Each provider is rate-limited independently.
    * Returns only fulfilled responses — a single provider failure never
    * blocks the others.
    */
@@ -125,7 +138,10 @@ export class ProviderRegistry {
     signal?: AbortSignal,
   ): Promise<SearchResponse[]> {
     const results = await Promise.allSettled(
-      names.map((name) => this.getProvider(name).search(query, options, signal)),
+      names.map(async (name) => {
+        await this.limiters.get(name)?.acquire();
+        return this.getProvider(name).search(query, options, signal);
+      }),
     );
     return results
       .filter((r): r is PromiseFulfilledResult<SearchResponse> => r.status === "fulfilled")
