@@ -1,0 +1,7 @@
+{
+  "name": "@svenhornaff/pi-web-search",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": [".pi/extensions/web-search/src/index.ts"]
+  }
+}
