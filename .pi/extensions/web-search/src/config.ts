@@ -61,7 +61,10 @@ export interface WebSearchConfig {
 
 const DEFAULTS: WebSearchConfig = {
   defaultProvider: "auto",
-  fallbackOrder: ["exa", "brave", "tavily"],
+  // Brave first per AIMultiple 2026 agentic-search benchmark (scored highest
+  // on general-purpose queries), Exa second for semantic fallback, Tavily last.
+  // See search-architecture-review.md §Phase D.
+  fallbackOrder: ["brave", "exa", "tavily"],
   maxResults: 5,
   maxInlineContentChars: 30_000,
   domainPolicy: { allow: [], deny: [] },

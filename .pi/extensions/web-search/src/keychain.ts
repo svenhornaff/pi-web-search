@@ -11,6 +11,13 @@
  *
  * Verify it works (macOS):
  *   security find-generic-password -a "$USER" -s "brave-api-key" -w
+ *
+ * Supported keys and their env vars:
+ *   EXA_API_KEY       — service "exa-api-key"
+ *   BRAVE_API_KEY     — service "brave-api-key"
+ *   TAVILY_API_KEY    — service "tavily-api-key"
+ *   JINA_API_KEY      — service "jina-api-key"  (optional; enables authenticated
+ *                        Jina Reader rate tier when Tavily Extract unavailable)
  */
 
 import { execFile } from "node:child_process";

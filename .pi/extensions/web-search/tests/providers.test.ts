@@ -32,8 +32,13 @@ describe("provider search contracts", () => {
   });
 
   test("TavilyProvider maps the raw payload into SearchResult objects", async () => {
-    stubFetch(async (input) => {
+    stubFetch(async (input, init) => {
       assert.match(String(input), /api.tavily.com/);
+      // Phase E: api_key moved out of body into Authorization header
+      const authHeader = (init?.headers as Record<string, string>)["Authorization"];
+      assert.match(authHeader ?? "", /^Bearer /);
+      const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+      assert.equal(body["api_key"], undefined, "api_key must not appear in request body");
       return new Response(JSON.stringify({
         query: "FastAPI docs",
         answer: "FastAPI is a Python web framework.",

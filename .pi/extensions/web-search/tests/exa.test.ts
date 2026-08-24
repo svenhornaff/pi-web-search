@@ -19,6 +19,10 @@ const SAMPLE_RESPONSE = {
       title: "Understanding LLM Attention",
       url: "https://arxiv.org/abs/2301.00001",
       text: "Large language models use attention mechanisms to process context. This paper explains transformer attention in detail.",
+      highlights: [
+        "Transformer attention is key to LLM performance.",
+        "Self-attention enables parallel context processing.",
+      ],
       summary: "An in-depth look at transformer attention mechanisms in LLMs.",
       publishedDate: "2024-01-15T00:00:00.000Z",
       author: "Test Author",
@@ -27,6 +31,7 @@ const SAMPLE_RESPONSE = {
       title: "Neural Search Explained",
       url: "https://example.com/neural-search",
       text: "Neural search uses embeddings to find semantically similar content.",
+      // no highlights, no summary — tests text fallback
     },
   ],
 };
@@ -50,8 +55,31 @@ describe("ExaProvider — search contracts", () => {
 
     assert.match(capturedUrl, /api\.exa\.ai\/search/);
     assert.equal(capturedInit?.method, "POST");
-    assert.equal((capturedInit?.headers as Record<string, string>)["x-api-key"], "test-exa-key");
+    // Phase A: auth migrated to Authorization: Bearer
+    assert.equal(
+      (capturedInit?.headers as Record<string, string>)["Authorization"],
+      "Bearer test-exa-key",
+    );
     assert.equal((capturedInit?.headers as Record<string, string>)["Content-Type"], "application/json");
+  });
+
+  test("requests highlights and text in the same contents call", async () => {
+    let capturedBody = "";
+
+    stubFetch(async (_, init) => {
+      capturedBody = init?.body as string;
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const provider = new ExaProvider("test-exa-key");
+    await provider.search("test query");
+
+    const body = JSON.parse(capturedBody) as { contents: { highlights?: object; text?: object } };
+    assert.ok(body.contents.highlights, "highlights field should be present");
+    assert.ok(body.contents.text, "text fallback field should be present");
   });
 
   test("maps results to SearchResult shape", async () => {
@@ -101,7 +129,7 @@ describe("ExaProvider — search contracts", () => {
     assert.match(result.results[1]?.description ?? "", /Neural search/);
   });
 
-  test("exposes text as fullContent", async () => {
+  test("prefers highlights as fullContent when present", async () => {
     stubFetch(async () =>
       new Response(JSON.stringify(SAMPLE_RESPONSE), {
         status: 200,
@@ -112,7 +140,24 @@ describe("ExaProvider — search contracts", () => {
     const provider = new ExaProvider("test-exa-key");
     const result = await provider.search("LLM");
 
-    assert.ok(result.results[0]?.fullContent?.includes("attention mechanisms"));
+    // Highlights joined with " … "
+    assert.ok(result.results[0]?.fullContent?.includes("Transformer attention"));
+    assert.ok(result.results[0]?.fullContent?.includes("Self-attention"));
+  });
+
+  test("falls back to text as fullContent when no highlights", async () => {
+    stubFetch(async () =>
+      new Response(JSON.stringify(SAMPLE_RESPONSE), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const provider = new ExaProvider("test-exa-key");
+    const result = await provider.search("neural search");
+
+    // Second result has no highlights — should use text
+    assert.ok(result.results[1]?.fullContent?.includes("embeddings"));
   });
 
   test("respects maxResults option", async () => {

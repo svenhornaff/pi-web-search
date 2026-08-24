@@ -33,7 +33,7 @@ describe("loadConfig() — defaults", () => {
     await removeConfig();
     const config = await loadConfig();
     assert.equal(config.defaultProvider, "auto");
-    assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]);
+    assert.deepEqual(config.fallbackOrder, ["brave", "exa", "tavily"]);
     assert.equal(config.maxResults, 5);
     assert.equal(config.maxInlineContentChars, 30_000);
     assert.deepEqual(config.domainPolicy, { allow: [], deny: [] });
@@ -100,13 +100,13 @@ describe("loadConfig() — invalid values fall back to defaults", () => {
   test("fallbackOrder with unknown provider name filtered out", async () => {
     await writeConfig({ fallbackOrder: ["exa", "brave", "nonexistent", "tavily"] });
     const config = await loadConfig();
-    assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]);
+    assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]); // explicit config preserved as-is
   });
 
   test("fallbackOrder all-invalid → default", async () => {
     await writeConfig({ fallbackOrder: ["bad1", "bad2"] });
     const config = await loadConfig();
-    assert.deepEqual(config.fallbackOrder, ["exa", "brave", "tavily"]);
+    assert.deepEqual(config.fallbackOrder, ["brave", "exa", "tavily"]); // falls back to new default
   });
 
   test("reads domainPolicy allow + deny lists", async () => {

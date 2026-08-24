@@ -2,11 +2,13 @@
  * Brave Search provider implementation.
  * 
  * Features:
- * - Contextual search with independent SERP
+ * - LLM Context endpoint (`/res/v1/llm/context`) — machine-shaped output,
+ *   benchmarked by Brave as "the most powerful Search API for AI".
+ *   Replaced `/res/v1/web/search` per search-architecture-review.md §Finding 2.
  * - Freshness filters (day/week/month/year)
  * - Country-specific results
  * - Free tier: $5/month credits (~1000 queries)
- * 
+ *
  * API key resolution order:
  *   1. macOS Keychain → service "brave-api-key"
  *   2. Environment variable → BRAVE_API_KEY
@@ -25,7 +27,7 @@ import type {
   SearchResponse,
 } from "./base.js";
 
-const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/llm/context";
 
 const BRAVE_KEY_CONFIG = {
   keychainService: "brave-api-key",
@@ -105,8 +107,17 @@ export class BraveProvider implements SearchProvider {
       throw new Error(`Brave Search API ${response.status}: ${body}`);
     }
 
-    // Parse response
+    // LLM Context endpoint returns a flat `results` array shaped for machine
+    // consumption (title, url, description, snippet).
     const data = (await response.json()) as {
+      results?: Array<{
+        title?: string;
+        url?: string;
+        description?: string;
+        snippet?: string;
+      }>;
+      // Legacy web.results shape retained as fallback in case the endpoint
+      // returns the SERP format on older subscription tiers.
       web?: {
         results?: Array<{
           title?: string;
@@ -116,7 +127,8 @@ export class BraveProvider implements SearchProvider {
       };
     };
 
-    const results = (data.web?.results ?? [])
+    const rawResults = data.results ?? data.web?.results ?? [];
+    const results = rawResults
       .filter(
         (r): r is { title: string; url: string; description: string } =>
           typeof r.title === "string" &&
@@ -126,7 +138,7 @@ export class BraveProvider implements SearchProvider {
       .map((r) => ({
         title: r.title,
         url: r.url,
-        description: r.description,
+        description: (r as { snippet?: string }).snippet ?? r.description,
       }));
 
     return {

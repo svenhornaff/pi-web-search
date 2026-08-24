@@ -1,5 +1,72 @@
 # Changelog
 
+## [1.5.0] — 2026-08-24
+
+### Changed
+
+- **Phase A — Exa: `highlights` replaces `text` as primary content field**:
+  `exa.ts` now requests `highlights: { numSentences: 5, highlightsPerUrl: 3 }`
+  alongside `text: { maxCharacters: 2000 }` in the same `contents` call (both
+  fields are supported in one request per Exa docs). `fullContent` is built
+  from highlights when present (joined with ` … `), falling back to `text`
+  when the result has no highlights. `description` uses the same priority chain.
+  Per Exa's own agent-workflow guidance: highlights return the most relevant
+  excerpts at ~10x fewer tokens than raw text — directly serves the extension's
+  token-budget differentiator.
+
+- **Phase A — Exa: auth migrated to `Authorization: Bearer`**:
+  The header was `x-api-key`; Exa's primary documented pattern (Aug 2026) is
+  `Authorization: Bearer $EXA_API_KEY`. Migrated. `x-api-key` is noted as a
+  rollback comment in the source.
+
+- **Phase B — Brave: LLM Context endpoint**:
+  `BRAVE_SEARCH_URL` updated from `/res/v1/web/search` to `/res/v1/llm/context`
+  — Brave's documented "most powerful Search API for AI", shaped for machine
+  consumption. Same `X-Subscription-Token` auth header. Response parser handles
+  both the new flat `results` shape and the legacy `web.results` shape as a
+  graceful fallback for older subscription tiers. `snippet` field preferred over
+  `description` when present.
+
+- **Phase C — content-fetch fallback diversification**:
+  `content-processor.ts` now tries Tavily `/extract` before Jina Reader when
+  standard extraction and RSC parsing yield sparse content (< 50 estimated
+  tokens). Tavily Extract reuses the existing `TAVILY_API_KEY` — no new
+  credential surface. Jina Reader remains the final fallback (zero-key entry
+  point). Fallback chain: RSC parser → Tavily Extract → Jina Reader.
+
+- **Phase C — `JINA_API_KEY` support added to `keychain.ts`**:
+  Optional key resolves via the same Keychain/env/`.env` chain as the other
+  three providers (service `"jina-api-key"`, env var `JINA_API_KEY`). When
+  set, Jina Reader calls include `Authorization: Bearer` for the higher
+  authenticated rate tier. When absent, the existing unauthenticated free-tier
+  behaviour is preserved.
+
+- **Phase D — default `fallbackOrder` changed to `["brave", "exa", "tavily"]`**:
+  Previous default was `["exa", "brave", "tavily"]`. Updated per AIMultiple 2026
+  agentic-search benchmark: Brave scored highest on general-purpose queries;
+  Exa remains second for its semantic strengths; Tavily last. Category-based
+  primary selection in `provider-selector.ts` is unchanged — this only affects
+  which provider is tried first when the primary fails.
+
+- **Phase E — Tavily: `api_key` moved from request body to `Authorization: Bearer` header**:
+  Body-embedded credentials are more likely to surface in proxy logs than
+  header-embedded ones. Migrated to `Authorization: Bearer $TAVILY_API_KEY`
+  to match current Tavily integration examples.
+
+- **Jina User-Agent version string updated**: `pi-web-search/0.8` → `pi-web-search/1.5`.
+
+### Added
+
+- **Tests for auth and highlights changes (Phases A, B, E)**:
+  - `exa.test.ts`: `Authorization: Bearer` header assertion replaces `x-api-key`
+    assertion; two new tests — `requests highlights and text in the same contents
+    call`, `falls back to text as fullContent when no highlights`; existing
+    `exposes text as fullContent` test renamed and updated to assert highlights.
+  - `providers.test.ts`: Tavily test now asserts `Authorization` header is
+    present and `api_key` field is absent from the request body.
+
+---
+
 ## [1.4.0] — 2026-08-24
 
 ### Fixed

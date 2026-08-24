@@ -72,9 +72,10 @@ export class TavilyProvider implements SearchProvider {
       this.apiKey = await resolveApiKey(TAVILY_KEY_CONFIG);
     }
 
-    // Build request body
+    // Build request body — api_key moved to Authorization header (Bearer scheme)
+    // per current Tavily integration examples. Body-embedded credentials are more
+    // likely to surface in proxy logs. See search-architecture-review.md §Finding 3.
     const requestBody = {
-      api_key: this.apiKey,
       query,
       search_depth: options?.depth ?? "basic",
       max_results: Math.min(options?.maxResults ?? 5, 20),
@@ -91,6 +92,7 @@ export class TavilyProvider implements SearchProvider {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(requestBody),
         signal,
