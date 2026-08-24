@@ -97,3 +97,6 @@ This project has shipped regressions where the surface and the docs disagreed â€
 3. Public surface diffed (see above) â€” README and CHANGELOG updated if it changed.
 4. Version bumped if `package.json` or `CHANGELOG.md` changed.
 5. New/changed behavior has a test that doesn't depend on ambient API keys.
+
+## Rules 
+1. never work outside this workspace `~/Workspace/pi-web-search` in case a `tmp` folder is needed always do in the workspace root

@@ -39,3 +39,21 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      - name: Pack and smoke-install
+        working-directory: .pi/extensions/web-search
+        run: |
+          npm pack --pack-destination /tmp
+          TARBALL=$(ls /tmp/svenhornaff-web-search-*.tgz | head -1)
+          mkdir -p /tmp/pi-web-search-smoke
+          cd /tmp/pi-web-search-smoke
+          npm init -y
+          # Install the packed tarball and jiti (pi's TS loader for node_modules)
+          npm install "$TARBALL" jiti
+          # Smoke-import via jiti — same mechanism pi uses to load extensions
+          node --input-type=module <<'EOF'
+          import { createJiti } from "jiti";
+          const jiti = createJiti(import.meta.url);
+          await jiti.import("@svenhornaff/web-search");
+          console.log("smoke import OK (jiti)");
+          EOF

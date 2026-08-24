@@ -1,12 +1,13 @@
 /**
- * web-search — Dual-provider web search extension for Pi coding agent.
+ * web-search — Multi-provider web search extension for Pi coding agent.
  *
- * Registers two tools the LLM calls autonomously:
- *   web_search  — search the web via Brave or Tavily
- *   web_fetch   — extract readable content from a URL
+ * Registers three tools the LLM calls autonomously:
+ *   web_search        — search via Exa, Brave, or Tavily (auto-selected by query type)
+ *   web_fetch         — extract readable content from a URL
+ *   get_fetch_content — retrieve previously-fetched full content by handle
  *
  * Setup:
- *   1. Set BRAVE_API_KEY in your environment
+ *   1. Set EXA_API_KEY, BRAVE_API_KEY, and/or TAVILY_API_KEY in your environment
  *   2. Place this extension in .pi/extensions/ (project) or ~/.pi/agent/extensions/ (global)
  *   3. Run `npm install` in this directory
  */

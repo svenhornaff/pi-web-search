@@ -1,6 +1,6 @@
 # pi-web-search
 
-A [Pi coding agent](https://pi.dev) workspace providing the **`web-search`** extension — dual-provider web search and content extraction (`web_search` + `web_fetch` tools) for the Pi LLM.
+A [Pi coding agent](https://pi.dev) workspace providing the **`web-search`** extension — multi-provider web search and content extraction (Exa, Brave, Tavily) with three LLM-callable tools: `web_search`, `web_fetch`, and `get_fetch_content`.
 
 ## Extension
 

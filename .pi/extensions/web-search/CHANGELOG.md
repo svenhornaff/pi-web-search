@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.1.0] — 2026-08-24
+
+### Fixed
+
+- **Missing `dependencies` in `package.json` (Phase 1.1)**: the extension
+  declared zero runtime dependencies despite `src/` importing six packages
+  (`linkedom`, `turndown`, `turndown-plugin-gfm`, `pdf-parse`, `js-tiktoken`,
+  `@sinclair/typebox`). These existed only in the parent workspace, making the
+  published artifact uninstallable in isolation. All six are now in
+  `"dependencies"` with the same version ranges as the workspace parent.
+  `@earendil-works/pi-coding-agent` moved to `"peerDependencies"` (pi provides
+  it at runtime; consumers shouldn’t need to install it themselves).
+
+### Added
+
+- **Pack + smoke-install CI step (Phase 1.2)**: `.github/workflows/pi-web-search-check.yml`
+  now runs `npm pack` then installs the tarball into a throwaway directory and
+  smoke-imports the package. This catches missing-dependency regressions before
+  they reach the registry — the same check that would have caught this bug.
+
+### Changed
+
+- **Stale provider copy updated (Phase 1.3)**:
+  - `src/index.ts` header: "Dual-provider" → "Multi-provider"; updated tool
+    list to include `get_fetch_content`; setup note now lists all three API keys.
+  - Root `README.md` description: "dual-provider" → "multi-provider"; names
+    all three providers and all three tools.
+  - `package.json` `"description"`: "Brave + Tavily" → "Exa, Brave, Tavily".
+
+---
+
 ## [1.0.2] — 2026-08-24
 
 ### Fixed
