@@ -15,6 +15,12 @@ npm install
 
 Set `BRAVE_API_KEY` and/or `TAVILY_API_KEY` in your environment, then start Pi — the extension loads automatically.
 
+## Install from npm
+
+```bash
+pi install npm:@svenhornaff/web-search
+```
+
 ## Agent instructions
 
 → **[AGENTS.md](AGENTS.md)** — workspace layout, commands, code style, testing rules, commit conventions, and the PR checklist for contributors and AI agents working in this repo.

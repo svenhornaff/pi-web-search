@@ -7,7 +7,7 @@
 export type Provider = "anthropic" | "openai" | "google" | "unknown";
 
 /** Token counting strategies */
-export type TokenCountMode = "exact_remote" | "local_exact" | "heuristic";
+export type TokenCountMode = "local_exact" | "heuristic";
 
 /** Model-specific token budget configuration */
 export interface ModelBudget {

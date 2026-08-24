@@ -21,6 +21,7 @@ import { createSearchTool } from "./tool-search.js";
 import { createFetchTool } from "./tool-fetch.js";
 import { registry } from "./providers/registry.js";
 import { suggestProvider } from "./provider-selector.js";
+import { cleanExpiredSpillover } from "./spillover.js";
 
 function renderSearchWidget(ctx: ExtensionContext, cache: SearchCache): void {
   if (!ctx.hasUI) return;
@@ -41,6 +42,12 @@ export default function piWebSearch(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     cache.clear();
     renderSearchWidget(ctx, cache);
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    // Clean up expired spillover files on session end.
+    // Fire-and-forget — shutdown must not block on async cleanup.
+    cleanExpiredSpillover(ctx.cwd).catch(() => {});
   });
 
   pi.on("model_select", (event) => {

@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.0] — 2026-08-24
+
+### Changed
+
+- **Package renamed to `@svenhornaff/web-search`** (scoped npm name). The
+  unscoped name `web-search` is already taken on the npm registry by an
+  unrelated package (URL-generator, v0.6.2). Scoped name is permanently
+  squatting-proof. Updated `package.json`, extension README install
+  instructions, and root README accordingly.
+- **License corrected to `NCSAL`** in `package.json` (was `MIT`, conflicting
+  with the root `LICENSE` file which has always been Non-Commercial
+  Source-Available). Extension README updated with the correct license
+  statement and link to root `LICENSE`.
+- **`TokenCountMode` union cleaned up**: removed unused `"exact_remote"`
+  variant left behind when the Anthropic remote counter was deleted in 0.3.6.
+  No runtime change — the variant was never produced or consumed after that
+  deletion.
+
+### Added
+
+- **`session_shutdown` hook**: `cleanExpiredSpillover(ctx.cwd)` is now called
+  on session shutdown (fire-and-forget, never blocks). Spillover files in
+  `.pi/cache/web-fetch/` previously relied on opportunistic cleanup during the
+  next `web_fetch` call; now they are also cleaned at session end.
+
+---
+
 ## [0.5.1] — 2026-08-24
 
 ### Changed

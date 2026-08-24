@@ -1,9 +1,9 @@
 {
-  "name": "web-search",
-  "version": "0.5.1",
+  "name": "@svenhornaff/web-search",
+  "version": "0.6.0",
   "description": "Web search and content extraction extension for Pi coding agent (Brave + Tavily)",
   "author": "Brooklyn42",
-  "license": "MIT",
+  "license": "NCSAL",
   "keywords": ["pi-package", "web-search"],
   "type": "module",
   "scripts": {

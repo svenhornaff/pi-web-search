@@ -1,10 +1,17 @@
 # web-search Extension Refactor Guideline
 
-> Target: **≥ 9/10** across all criteria. Current baseline: **6.5/10** — verified against the actual codebase, holds.
+> Target: **≥ 9/10** across all criteria. Current baseline: **7.8/10** overall
+> (extension code 8.5, project foundation 6.5).
 >
-> Benchmark: [`pi-web-access`](https://pi.dev/packages/pi-web-access) v0.24.0 (292.5K downloads/mo · 86.1K/wk, published Aug 18 2026; 25 providers, 4 tools, zero-config Exa — corrected from v0.24.1 / 325K, which was stale by a few days when this doc was drafted).
+> Supersedes `refactor_v2.md` / `refactor_v3.md` (deleted — both were point-in-time
+> rerating snapshots against 0.3.6 and 0.4.x, now stale). This doc reflects the
+> actual source at **v0.5.1**, verified via a clean `npm run check` (typecheck +
+> lint + 140 tests, all pass), the live CI workflow, and line-level reading of
+> every file referenced below — not trusted from the CHANGELOG.
 >
-> Date: August 2026 · Pi v0.84.2 · Audited against source Aug 22 2026 — see audit notes marked ✅/⚠️ below.
+> Benchmark: [`pi-web-access`](https://pi.dev/packages/pi-web-access) v0.24.0
+> (25 providers, 4 tools, zero-config Exa) — carried over from the prior audit,
+> not re-verified live this round.
 
 ---
 
@@ -12,142 +19,201 @@
 
 | # | Criterion | Now | Target | Key Gap |
 |---|-----------|:---:|:------:|---------|
-| 1 | Architecture | 7 | 9 | `index.ts` god-file, duplicated `selectSections`, singleton registry |
-| 2 | Code Quality | 7 | 9 | Raw-fetch token counting, stale hardcoded model tables, no retry |
-| 3 | Testing | 5 | 9 | 26% file coverage, no integration tests, stale assertions |
-| 4 | Pi API Usage | 7 | 10 | `web_fetch` already reads `ctx.model?.id`; the real gaps are `ctx.getContextUsage()` (fully unused), `web_search`'s `execute` not taking `ctx` at all, pi auth, `session_start` |
-| 5 | Provider Design | 8 | 9 | Only 2 providers, no zero-config, no fallback chain |
-| 6 | Content Pipeline | 8 | 9 | No JS rendering fallback, no GitHub/YouTube handling |
-| 7 | Documentation | 7 | 9 | Stale README tables, no config reference |
-| 8 | Security | 7 | 9 | macOS-only keychain (degrades gracefully on other OSes, doesn't crash — still worth fixing), no SSRF guard, no rate limiting |
-| 9 | Maintainability | 5 | 9 | Hardcoded model table, no CI, `process.cwd()` at module load (comment in the code claims the opposite of what it does — see 1.4), package.json version not bumped to match CHANGELOG |
-| 10 | Feature Completeness | 6 | 9 | Missing source-check, GitHub clone, batch queries, config file |
-| 11 | Ecosystem Fit | 5 | 9 | Not distributable, no `pi install`, no JSON config |
-| | **Overall** | **6.5** | **9+** | |
+| 1 | Architecture | 8.5 | 9 | Clean 24-file split, `index.ts` 113 LOC factory — only debt left is the module-level singleton `ProviderRegistry` (not injectable, not testable in isolation) |
+| 2 | Code Quality | 8.5 | 9 | Status-aware retry, real key injection, safe-fetch layer — clean `tsc`/`eslint`. Cosmetic-only: unused `TokenCountMode.exact_remote` variant left in the union type after the Anthropic remote counter was deleted |
+| 3 | Testing | 8 | 9 | 140 tests across 12 of 24 `src/` files (up from 26% file coverage). Gap is integration coverage: no test exercises a tool's `execute()` end-to-end against a mocked HTTP layer and asserts the *formatted* output shape |
+| 4 | Pi API Usage | 9 | 10 | `session_start`, `model_select`, `ctx.getContextUsage()`, `ctx.hasUI`/`ctx.ui`, `registerCommand`, `registerTool` all in active use. `session_shutdown` remains the one unused lifecycle hook (spillover cleanup) |
+| 5 | Provider Design | 7 | 9 | Still Brave + Tavily only. `ProviderRegistry.getProvider()` falls back to default only when the *name* is unregistered — there's no fallback on a provider *failing* (missing key, request error) for single-provider calls |
+| 6 | Content Pipeline | 8 | 9 | HTML + PDF extraction, section ranking, JSON-LD/OpenGraph structured extraction — solid. No JS-render fallback, no GitHub/YouTube handling, no RSC/Next.js flight-data parsing |
+| 7 | Documentation | 7.5 | 9 | README and CHANGELOG are genuinely good (self-correcting, evidence-cited) — pulled down by a live LICENSE/package.json conflict and (until this pass) three overlapping planning docs in `development/` |
+| 8 | Security | 8.5 | 9 | Real SSRF guard (DNS-checked, per-hop redirect validation, 5 MB cap), documented DNS-rebinding TOCTOU limitation. Missing: rate limiting, domain allow/deny policy |
+| 9 | Maintainability | 9 | 9 | CI enforces version-consistency + typecheck + lint + test on every push — the exact bug class that recurred twice (package.json/CHANGELOG drift) is now structurally blocked, not just documented |
+| 10 | Feature Completeness | 6.5 | 9 | Missing `source_check`, GitHub clone handling, batch queries, JSON config file, `answer` mode, `get_search_content` |
+| 11 | Ecosystem Fit | 5.5 | 9 | pi manifest works locally today; not published. The name `web-search` is already taken on the npm registry by an unrelated package — this blocks publishing as-is, not just "hasn't happened yet" |
+| | **Overall** | **7.8** | **9+** | |
 
 ---
 
-## Phase 1 — Fix the Foundation (Score: 5→8)
+## Completed — verified against source, not changelog trust
 
-_Goal: eliminate every "this is broken / stale / fragile" issue before adding features._
+### Phase 1 — Foundation (v0.3.5)
 
-**Audit note:** every item below was checked against the actual source and test run (`npm test`: 104/105 pass, the 1 failure is exactly the `gpt-5` assertion described in 1.2). All hold up as written except where flagged ⚠️.
+| Item | What | Verified |
+|------|------|----------|
+| Model table removed | `MODEL_CONFIGS`/`PROVIDER_FALLBACKS`/`detectProvider` deleted from `token-budget.ts`; replaced with `buildBudget(model, contextWindow, maxTokens, provider)` — pure ratio math (`TOOL_RESERVE_RATIO = 0.05`, `SAFETY_MARGIN = 0.05`), fed entirely by the `model_select` event payload. `buildUnknownBudget()` covers the pre-`model_select` case with `UNKNOWN_DEFAULTS` (100K context, 4K output). Zero model names anywhere in `src/`. | ✅ read `token-budget.ts` directly |
+| Stale tests fixed | Model-name assertions replaced with ratio-math tests | ✅ `token-budget.test.ts` passes, no model-name literals |
+| Cache reset on session lifecycle | `pi.on("session_start", ...)` clears the cache | ✅ confirmed in current `index.ts` (see Phase 3 below — this was later hardened further) |
+| `process.cwd()` fixed | `spillover.ts` no longer captures cwd at module load; accepts `cwd` param from callers | ✅ read `spillover.ts` |
+| Shared `selectSections()` | Single `section-selector.ts`, rank-sort preserved, both HTML and PDF paths import it | ✅ read `section-selector.ts`, `content-processor.ts`, `pdf-extractor.ts` |
+| `index.ts` split | 335 LOC → `tool-search.ts` / `tool-fetch.ts` / `format.ts` / `index.ts` | ✅ current `index.ts` is 113 LOC (grew back up slightly since — see Phase 3, commands were added) |
 
-### 1.1 Kill the Hardcoded Model Table ✅ Done (0.3.5)
+### Phase 2 — Deep Pi Integration (v0.3.6)
 
-**Why:** The `MODEL_CONFIGS` / `PROVIDER_FALLBACKS` / `detectProvider` in `token-budget.ts` went stale three times. It will go stale again. pi already knows every model's context window.
+| Item | What | Verified |
+|------|------|----------|
+| Anthropic remote token counting removed | `AnthropicTokenCounter` (raw `fetch()` to `api.anthropic.com`) deleted; Anthropic models use the heuristic counter (chars ÷ 3–4) | ✅ `token-counter.ts` has no Anthropic API call |
+| `ctx.getContextUsage()` wired in | `tool-fetch.ts` computes `effectiveContentBudget(staticBudget, usage.tokens)`, clamped to `[0, staticBudget]` | ✅ read `token-budget.ts`'s `effectiveContentBudget()` + its 6-case test suite |
+| Keychain gated to macOS | `resolveApiKey()` only shells to `/usr/bin/security` when `process.platform === "darwin"`; falls through to env var → `.env` otherwise, with a platform-appropriate error message | ✅ read `keychain.ts` |
 
-**How:**
-- In the `model_select` handler, read `event.model.contextWindow` and `event.model.maxTokens` directly from the event payload (pi 0.82.0+).
-- Derive `provider` from `event.model.provider`.
-- Store the computed `ModelBudget` in the closure. Remove `token-budget.ts` entirely or reduce it to a single `buildBudget(contextWindow, maxTokens, provider)` pure function with sensible reserve ratios.
-- Fallback for `"unknown"` when `model_select` hasn't fired yet: use conservative 100K defaults.
+### Phase 3 — Regression Hardening (v0.5.0–0.5.1)
 
-**Test:** `getModelBudget()` becomes `buildBudget()` — test the ratio math only, not model names.
+This round wasn't in either prior plan — it's the response to five regressions a `refactor_v3.md` audit found in the two releases immediately after Phase 2. All five are fixed and verified here independently.
 
-### 1.2 Fix Stale Tests ✅ Done (0.3.5)
+**CI + version-consistency gate.** `scripts/check-version.mjs` compares `package.json`'s version against `CHANGELOG.md`'s top entry and fails the build on drift. Wired into `.github/workflows/pi-web-search-check.yml` as its own step, before typecheck/lint/test:
 
-- `token-budget.test.ts` line asserting `gpt-5` hits OpenAI fallback now fails (hits exact match at 400K). Update or delete — this test goes away entirely if 1.1 removes the model table. ✅ Confirmed: `npm test` currently reports 104 pass / 1 fail, and it's exactly this assertion.
-- **Root cause, not previously called out:** today's `CHANGELOG.md` entry (0.3.4) added `claude-opus-5`, `gpt-5`, `gpt-5.5` to `MODEL_CONFIGS` to fix a real under-budgeting bug — the stale test is a direct, same-day side effect of that fix, not old drift. `package.json` still reads `"version": "0.3.3"` — bump it alongside the CHANGELOG entry that already exists for 0.3.4.
-- Run `npm test` in CI. If any test fails, the PR is blocked.
-
-### 1.3 Reset Cache on Session Lifecycle ✅ Done (0.3.5)
-
-```ts
-pi.on("session_start", () => { cache = new SearchCache(); });
+```yaml
+- name: Version consistency
+  working-directory: .pi/extensions/web-search
+  run: node scripts/check-version.mjs
+- name: Typecheck
+  run: npm run typecheck
+- name: Lint
+  run: npm run lint
+- name: Test
+  run: npm run test
 ```
 
-Without this, cache from a previous `/resume`'d session leaks into the new one.
+Ran both `node scripts/check-version.mjs` and the full workflow locally — clean. This closes the bug class that hit `package.json`/`CHANGELOG.md` twice (0.3.4/0.3.3, then 0.4.1/0.4.0) without a human catching it either time.
 
-### 1.4 Fix `process.cwd()` at Module Load ✅ Done (0.3.5)
+**`safe-fetch.ts` — real hardening, not cosmetic.** Replaces `redirect: "follow"` + post-hoc `response.url` checking (the blocked hop's request had already fired by the time you can inspect it) with `redirect: "manual"` and per-hop `validateFetchUrl()`, capped at 5 hops:
 
-`spillover.ts` captures `CACHE_DIR = path.resolve(process.cwd(), ...)` when the module first loads. If pi changes cwd (e.g. `/resume` to a different project), spillover writes to the wrong directory. ✅ Confirmed, and worse than it sounds: the line has an inline comment reading *"Resolved once at module load — safe regardless of process.cwd() at call time"* — which asserts the opposite of what the code actually does. Fix the comment along with the bug, or the next person to touch this file will re-derive the same wrong belief from it.
-
-**Fix:** Accept `cwd` as a parameter from the caller (read from `ctx.cwd` in `web_fetch`).
-
-### 1.5 Extract Shared `selectSections()` ✅ Done (0.3.5)
-
-`content-processor.ts` and `pdf-extractor.ts` each have their own `selectSections()` with nearly identical logic (one uses `\n\n`, the other `\n\n---\n\n` as separator). ⚠️ **This is a live correctness bug, not just duplication:** `content-processor.ts`'s version sorts sections by `rank` (descending) before the greedy budget fill; `pdf-extractor.ts`'s copy dropped that sort and fills in original document order. It happens to look correct today only because PDF page rank (`pageCount - i`) is currently assigned in the same order pages already appear in — the moment PDF ranking becomes content-aware instead of position-only, section selection will silently stop respecting it. Flag this at Major, not Minor, when prioritizing.
-
-**Fix:** Create `src/section-selector.ts` with:
 ```ts
-export async function selectSections(
-  sections: Section[],
-  maxTokens: number,
-  counter: TokenCounter,
-  separator?: string,
-): Promise<SelectionResult>
+export async function safeFetch(url: string, options: SafeFetchOptions = {}): Promise<Response> {
+  let target = await validateFetchUrl(url);
+  for (let hop = 0; ; hop++) {
+    const response = await fetchWithRetry(target, { ...options, redirect: "manual" }, options);
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    if (hop >= MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${url}`);
+    const location = response.headers.get("location");
+    target = await validateFetchUrl(new URL(location!, target).toString());
+  }
+}
 ```
 
-### 1.6 Split `index.ts` (335 LOC → ~4 files) ✅ Done (0.3.5)
+Plus a 5 MB response cap (`readBoundedArrayBuffer` / `readBoundedText`), enforced via `Content-Length` when present and by aborting the stream mid-read otherwise, since a server can omit or lie about `Content-Length`. Wired into both `web_fetch` and `BraveProvider.fetch()`. The one documented, unfixed gap: DNS-rebinding TOCTOU — `validateFetchUrl()` resolves the hostname, then `fetch()` resolves it again independently a moment later, so a DNS answer that changes in between isn't caught. A real fix needs resolved-IP pinning (a custom undici `Agent`); flagged in the README as out of scope while every non-rebinding SSRF path is covered.
 
-| New File | Responsibility |
-|----------|----------------|
-| `src/tool-search.ts` | `web_search` tool definition + execute |
-| `src/tool-fetch.ts` | `web_fetch` tool definition + execute |
-| `src/format.ts` | `formatSearchResults()`, `buildFetchResponse()` |
-| `src/index.ts` | Extension factory: model tracking, tool registration, wiring |
+**Retry is now status-aware.** The old `withRetry(() => fetch(...))` only ever saw thrown errors — `fetch()` resolves (doesn't throw) on HTTP 429/502/503/504, so retry attempts for those statuses were dead code. `fetchWithRetry()` in `retry.ts` inspects `response.status` inside the loop:
 
-`index.ts` should be under 80 lines after this.
+```ts
+if (RETRYABLE_STATUSES.has(response.status) && attempt < retries) {
+  await delay(retryDelayMs(response, delayMs, attempt)); // honors Retry-After
+  attempt += 1;
+  continue;
+}
+```
+
+`web_fetch` now actually retries (via `safeFetch`), which it didn't before despite an earlier changelog entry claiming it did.
+
+**Provider tests no longer depend on ambient environment.** `BraveProvider`/`TavilyProvider` take an optional constructor `apiKey` that skips `resolveApiKey()` (Keychain → env → `.env`) entirely when supplied. The old tests only passed because the author's machine happened to have real keys set — they'd fail on any clean/keyless runner, which is exactly what CI now is.
+
+**`/websearch` shares the session cache.** Previously called the provider directly, so a `/websearch foo` followed by the model searching `foo` paid for the same query twice. Now uses the same `cache.key(query, [provider], options)` lookup as the `web_search` tool — confirmed in current `index.ts`'s `websearch` command handler.
+
+**Cache-clear bug fixed properly.** `SearchCache` is now mutated in place (`cache.clear()`) rather than reassigned inside the `session_start` handler, and both tools take `() => cache`/similar getters so the closure always sees the live instance — not a stale snapshot from registration time.
+
+**Widget simplified.** 0.5.1 dropped the `Ctrl+Shift+W` toggle; `renderSearchWidget()` always renders on `session_start` and after every search/command, showing live cache size.
 
 ---
 
-## Phase 2 — Deep Pi Integration (Score: 7→10)
+## Open — Project Foundation
 
-_Goal: use the platform properly instead of reimplementing it._
+These are repo-level, not code-level, and weren't caught by any prior code review because prior reviews only looked at `.pi/extensions/web-search/`.
 
-### 2.1 Use Pi's Auth System for Token Counting ✅ Done (0.3.6)
+### ~~License conflict~~ ✅ Fixed in v0.6.0
 
-The `AnthropicTokenCounter` class manually calls `https://api.anthropic.com/v1/messages/count_tokens` with a raw `fetch()` and its own API key. Pi already manages Anthropic auth (including OAuth tokens from `/login`).
+~~Root `LICENSE` is Non-Commercial Source-Available License (NCSAL) — copyright Sven Hornaff, non-commercial use only. But:
+- `.pi/extensions/web-search/package.json` declares `"license": "MIT"`.
+- The extension's own `README.md` has a `## License` section that says `MIT`.~~
 
-**Replace with:** `ctx.modelRegistry.getProviderAuth("anthropic")` to get the resolved key/headers, or better yet, just use the heuristic counter — the accuracy gain from remote counting is marginal and costs latency + a network call per fetch.
+Fixed: `package.json` now declares `"license": "NCSAL"`. Extension README updated with correct license statement and link to root `LICENSE`. All three sources now agree.
 
-### 2.2 Use `ctx.getContextUsage()` for Dynamic Budgeting ✅ Done (0.3.6)
+### ~~npm name is squatted~~ ✅ Fixed in v0.6.0
 
-Instead of computing a fixed `maxContentTokens` once from the model's context window, check how much context the current session has already consumed:
+~~An unrelated package already owns `web-search` on the public registry (currently at 0.6.2, a URL-generator package with no relation to this project).~~
 
-```ts
-const usage = ctx.getContextUsage();
-const available = usage
-  ? Math.max(0, budget.contextWindow - usage.tokens - budget.outputReserve)
-  : budget.maxContentTokens;
+Fixed: package renamed to `@svenhornaff/web-search` (scoped, permanently squatting-proof). This is the final name — not changing again.
+
+### Single squashed commit, no default branch
+
+```
+$ git log --oneline --all
+b361ec5 chore: initial commit — web-search v0.5.1
+$ git branch -a
+* develop
+  remotes/origin/develop
+$ git tag
+v0.5.1
 ```
 
-This prevents stuffing 750K of web content into a session that already has 900K of conversation.
+The entire 0.1.0 → 0.5.1 history described across 14 CHANGELOG entries happened before this repo existed in its current form — there's no commit trail to `git blame` or `git bisect` against, and no `main`/`master`, only `develop`. Not blocking, but decide whether `develop` becomes the default branch or a `main` gets cut from it — GitHub's UI and any future CI branch-protection rules will assume one exists.
 
-### 2.3 Cross-Platform Keychain ✅ Done (0.3.6)
+### ~~`session_shutdown` still unused~~ ✅ Fixed in v0.6.0
 
-`keychain.ts` shells out to `/usr/bin/security` — ⚠️ correction: it doesn't fail the extension on Linux/Windows, `execFile` errors are caught and it falls through to the env var / `.env` chain (confirmed in `resolveApiKey`), so functionality is preserved. The actual costs are: a doomed syscall on every cold key-lookup on non-macOS, no `process.platform` gate to skip it outright, and a misleading "Option 1 — macOS Keychain (recommended)" in the thrown error message shown to Linux/Windows users. Worth fixing for cleanliness and correct error messaging, not because it currently breaks anything. pi has `ctx.modelRegistry.getProviderAuth()` for credentials it manages. For extension-specific keys (Brave, Tavily), the resolution order should be:
-
-1. JSON config file (`~/.pi/web-search.json` — see 3.2)
-2. Environment variable
-3. Workspace `.env`
-
-Drop the macOS Keychain entirely. Or gate it behind `process.platform === "darwin"` with graceful fallback.
+~~Spillover files cleaned only opportunistically.~~ Fixed: `session_shutdown` now calls `cleanExpiredSpillover(ctx.cwd)` (fire-and-forget).
 
 ---
 
-## Phase 3 — Feature Parity + Differentiation (Score: 6→9)
+## Open — Phase 4: Feature Parity + Differentiation (Score: 6.5 → 9)
 
-_Goal: match pi-web-access on the features that matter, beat it on the ones that differentiate._
+_Goal: match `pi-web-access` on the features that matter, without chasing its breadth._
 
-### 3.1 Add Exa Provider (Zero-Config)
+### 4.1 Provider Fallback Chain
 
-**Why:** Exa is the ecosystem default. pi-web-access works with zero API keys because Exa MCP is free. Our extension requires a Brave key.
+**Why:** `ProviderRegistry.getProvider(name)` only falls back to the default provider when the requested *name* isn't registered at all — it does nothing when a registered provider's `search()` call actually fails (missing key, 401, network error). `searchAll()` already degrades gracefully via `Promise.allSettled`, but that's only used for multi-provider fan-out, not the common single-provider path most `web_search` calls take.
 
-**How:** Add `src/providers/exa.ts` implementing `SearchProvider`. Two modes:
-- **Direct API** when `EXA_API_KEY` is configured (fast, full control).
-- **MCP proxy** when no key is set (uses Exa's hosted MCP endpoint — same as pi-web-access's zero-config path). This requires calling the MCP endpoint via HTTP.
+**How:** Add a `searchWithFallback(names: ProviderName[], query, options)` that tries providers in order and returns the first success:
 
-Make Exa the first provider in the `auto` fallback chain. Brave and Tavily become secondary.
+```ts
+async searchWithFallback(
+  names: ProviderName[],
+  query: string,
+  options?: SearchOptions,
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  let lastError: unknown;
+  for (const name of names) {
+    try {
+      return await this.getProvider(name).search(query, options, signal);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error("All providers failed");
+}
+```
 
-### 3.2 JSON Config File
+Wire the fallback order through the JSON config (4.3) rather than hardcoding it.
 
-Create `~/.pi/web-search.json` (or under `PI_CODING_AGENT_DIR`):
+### 4.2 Exa Provider (Zero-Config)
+
+**Why:** Exa is the ecosystem default — `pi-web-access` needs zero API keys because Exa's MCP endpoint is free. This extension currently requires a Brave key at minimum, which is real onboarding friction.
+
+**How:** Add `src/providers/exa.ts` implementing the existing `SearchProvider` interface (`search()`, optional `fetch()`):
+
+```ts
+export class ExaProvider implements SearchProvider {
+  readonly name = "exa";
+  readonly type: ProviderType = "contextual";
+  constructor(private apiKey?: string) {}
+
+  async search(query: string, options?: SearchOptions, signal?: AbortSignal): Promise<SearchResponse> {
+    if (this.apiKey) return this.searchDirect(query, options, signal); // api.exa.ai
+    return this.searchViaMcp(query, options, signal); // hosted MCP endpoint, no key
+  }
+}
+```
+
+Register it first in the fallback chain (4.1) so a fresh install works with zero configuration — Brave/Tavily become opt-in upgrades, not requirements.
+
+### 4.3 JSON Config File
+
+**Why:** Right now the only configuration surface is environment variables and `.env` — no way to set default provider, fallback order, or content-size limits without code changes.
+
+**How:** `~/.pi/web-search.json` (or under `PI_CODING_AGENT_DIR`):
 
 ```json
 {
   "provider": "auto",
+  "fallbackOrder": ["exa", "brave", "tavily"],
   "braveApiKey": "$BRAVE_API_KEY",
   "tavilyApiKey": "$TAVILY_API_KEY",
   "exaApiKey": "$EXA_API_KEY",
@@ -155,189 +221,102 @@ Create `~/.pi/web-search.json` (or under `PI_CODING_AGENT_DIR`):
 }
 ```
 
-Support `$ENV_VAR` interpolation for secrets. Load on `session_start`, make it reloadable via `/reload`.
+`$ENV_VAR` interpolation for secrets, loaded on `session_start`, reloadable via `/reload`. This is what 4.1's fallback order should actually be sourced from, and it's the biggest single lever on Ecosystem Fit (currently 5.5) — most of what's blocking that score is "no way to configure this without editing source."
 
-### 3.3 Add `source_check` Tool
+### 4.4 `source_check` Tool
 
-**Why:** pi-web-access has it. It's genuinely useful for verifying claims with citations.
+**Why:** `pi-web-access` has this; genuinely useful for verifying a specific claim against live sources rather than a general search.
 
-**Minimal implementation:**
-1. Run `web_search` with the claim as query + optional user queries.
-2. Fetch top N pages.
-3. Return a structured artifact: `{ status: "supported" | "contradicted" | "unclear", sources: [...], passages: [...] }`.
+**How:** Register as a third tool alongside `web_search`/`web_fetch`:
+1. Run `web_search` with the claim as the query.
+2. Fetch the top N results via the existing `web_fetch` pipeline (reuse `safeFetch` + section selection).
+3. Return `{ status: "supported" | "contradicted" | "unclear", sources: [...], passages: [...] }`.
 
-Register as a third tool alongside `web_search` and `web_fetch`.
+No new infrastructure needed — this is a composition of the two existing tools plus a structured output shape.
 
-### 3.4 GitHub URL Handling
+### 4.5 GitHub URL Handling
 
-When `web_fetch` sees a GitHub URL:
-- `/owner/repo` → `git clone --depth 1`, return tree + README.
-- `/owner/repo/blob/...` → fetch raw content via `raw.githubusercontent.com`.
-- `/owner/repo/tree/...` → clone + return directory listing.
+**Why:** `web_fetch` currently treats every URL identically, including GitHub pages, which is wasteful — a `github.com/owner/repo` URL rendered as HTML loses the tree structure a `git clone --depth 1` or the GitHub API would give directly.
 
-Cache clones per session; clean up on `session_shutdown`.
+**How:** In `tool-fetch.ts`, detect GitHub URL patterns before falling through to generic HTML extraction:
+- `/owner/repo` → tree + README via the GitHub API (`api.github.com/repos/...`) or a shallow clone.
+- `/owner/repo/blob/...` → `raw.githubusercontent.com` direct fetch.
+- `/owner/repo/tree/...` → directory listing via the API.
 
-### 3.5 Batch Queries
+Cache API responses per session; if shallow-cloning, clean up on `session_shutdown` (see the Open Foundation item above — this gives that hook a second reason to exist).
 
-Add `queries: string[]` parameter to `web_search` (alongside `query`). Run them in parallel against the selected provider(s). Deduplicate across queries using the existing `aggregate()`.
+### 4.6 Batch Queries
 
-### 3.6 Fallback Chains for Fetch
+**Why:** `web_search` takes one `query` string. Multi-angle research (comparisons, "what changed between X and Y") currently costs N separate tool round-trips.
 
-When primary HTTP extraction fails (empty body, cookie wall), try:
-1. Jina Reader (`https://r.jina.ai/<url>`) — free, handles JS rendering.
-2. Return whatever came back with a warning.
+**How:** Add `queries: string[]` as an alternative to `query`, run in parallel against the selected provider(s) via `Promise.allSettled` (the same pattern `searchAll()` already uses), and deduplicate across queries using the existing `search-aggregator.ts`.
 
-Register Jina as an optional provider in the registry. No API key required.
+### 4.7 Fetch Fallback for JS-Rendered / Blocked Pages
 
-### 3.7 Retry Transient Failures
+**Why:** The current pipeline (`linkedom` + Turndown) only sees server-rendered HTML. Cookie walls and JS-hydrated pages return an empty or near-empty extraction with no recovery path.
 
-Both `web_search` and `web_fetch` do zero retries. Add a simple retry wrapper:
-
-```ts
-async function withRetry<T>(fn: () => Promise<T>, retries = 1, delayMs = 1000): Promise<T>
-```
-
-Apply to all outbound `fetch()` calls. Retry on 429, 502, 503, 504, and network errors.
+**How:** When `content-processor.ts` detects an empty/near-empty extraction, fall back to a reader service (e.g. `https://r.jina.ai/<url>`) that handles JS rendering, no API key required. Register it as an optional provider-style fetch path in `registry.ts`, not a first-class `SearchProvider` — it only ever serves `web_fetch`, never `web_search`.
 
 ---
 
-## Phase 4 — Testing (Score: 5→9)
+## Open — Phase 5: Testing (Score: 8 → 9)
 
-### 4.1 Coverage Targets
+The gap isn't unit coverage — pure functions (aggregator, cache, selector, budget, retry, SSRF) are well tested (140 tests, 12/24 files). What's missing:
 
-| Module Group | Current | Target | Strategy |
-|-------------|:-------:|:------:|----------|
-| Pure functions (aggregator, cache, selector, budget) | ✅ tested | maintain | Update stale assertions |
-| Content pipeline (extractor, processor, section-parser) | ❌ none | ≥ 80% | Feed real HTML fixtures, assert sections/tokens/truncation |
-| Providers (brave, tavily, exa) | ❌ none | ≥ 70% | Mock `fetch()`, test request construction + response parsing |
-| Integration (tool execute → formatted output) | ❌ none | ≥ 3 scenarios | End-to-end with mock HTTP, assert tool output shape |
-| `index.ts` / tool registration | ❌ none | smoke test | Verify tools register without throwing |
-
-### 4.2 Test Fixtures
-
-Create `tests/fixtures/`:
-- `simple-article.html` — basic blog post with `<article>`, headings, code blocks.
-- `api-docs.html` — large docs page with 50+ sections (tests section selection + spillover).
-- `npm-package.html` — JSON-LD structured data, OpenGraph tags.
-- `cookie-wall.html` — page that returns a cookie notice (tests fallback detection).
-- `sample.pdf` — multi-page PDF for pdf-extractor tests.
-
-### 4.3 CI
-
-Add a GitHub Actions workflow (or local `npm run check` that runs in a git hook):
-```yaml
-- npm run typecheck
-- npm run lint
-- npm run test
-```
-
-Block merges on failure.
+- **Integration tests.** Nothing exercises a tool's `execute()` end-to-end against a mocked `fetch()` and asserts the *formatted* tool-output shape the model actually receives. `content-pipeline.test.ts` gets closest (real HTML fixture → `processContent()`) but stops short of going through `tool-fetch.ts`/`tool-search.ts` themselves.
+- **`tool-search.ts`'s `execute()` doesn't take `ctx`.** Harmless today (search needs no budget/cwd), but 4.3's config loading and 4.6's batch queries will need it. Align the signature when touching this file next rather than retrofitting later.
+- **Provider mocks are minimal.** `providers.test.ts` covers key injection and basic request/response shape, but not the fallback behavior 4.1 will add.
 
 ---
 
-## Phase 5 — Distribution & Ecosystem (Score: 5→9)
+## Open — Phase 6: Distribution & Ecosystem (Score: 5.5 → 9)
 
-### 5.1 Make It a Pi Package
+### 6.1 Resolve the Name, Then Publish
 
-✅ Partially done already: `web-search/package.json` already declares `"pi": {"extensions": ["./src/index.ts"]}`, so pi can load it locally today. What's actually missing is the rename, version bump, and npm publish — the manifest shape itself doesn't need inventing.
+The pi package manifest already works locally (`"pi": {"extensions": ["./src/index.ts"]}`) — nothing to build there. What's blocking is purely the name: `web-search` is taken on npm (see Open — Project Foundation, above). Decide the permanent name — reusing `bulliexplorer-web-search` or picking a new one — update `package.json`, the root README's install instructions, and the extension README consistently, then `npm publish`. This has been reverted at least once already; treat the decision as final this time.
 
-Update `web-search/package.json`:
-```json
-{
-  "name": "bulliexplorer-web-search",
-  "version": "0.4.0",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  }
-}
-```
+### 6.2 Commands, Shortcut, Widget
 
-Publish to npm. Anyone can then: `pi install npm:bulliexplorer-web-search`.
-
-### 5.2 Register Commands
-
-Add interactive commands via `pi.registerCommand()`:
-- `/websearch [queries]` — open inline search results with selection.
-- `/search` — browse cached results from current session.
-
-### 5.3 Register a Keyboard Shortcut
-
-```ts
-pi.registerShortcut("ctrl+shift+w", {
-  description: "Toggle web search activity monitor",
-  handler: async (_ctx) => { /* toggle status widget */ },
-});
-```
-
-### 5.4 Activity Widget
-
-Use `ctx.ui.setWidget()` to show live search/fetch activity:
-```
-─── Web Search ─────────────────────────
-  🔍 "FastAPI async"     brave  200  1.2s ✓
-  📄 docs.example.com    GET    200  0.8s ✓
-────────────────────────────────────────
-```
+Already done as of 0.5.x — `/websearch`, `/websearch-cache`, and the always-on status widget are live in `index.ts`. Nothing further needed here; listed for completeness against the original Phase 5 scope.
 
 ---
 
-## Phase 6 — Advanced (Score: 9→10, "Awesome Shit")
+## Open — Phase 7: Advanced (Score: 9 → 10)
 
-### 6.1 SSRF Guard
+### 7.1 `answer` Mode for `web_fetch`
 
-Before any `fetch()`, validate the URL:
-- Block `file://`, `data:`, `javascript:` schemes.
-- DNS-resolve the hostname; block private/reserved IP ranges (`10.x`, `172.16-31.x`, `192.168.x`, `127.x`, `::1`, link-local).
-- Follow redirects manually; re-validate each hop.
-- Cap response size (5 MB streamed).
+Add `mode: "answer"` — instead of returning full page markdown, run the extracted content through the session's active model with the user's `prompt` and return a grounded answer, storing the full content for 7.2's retrieval. This is `pi-web-access`'s biggest recent UX differentiator: the model reads the page for you and answers the specific question instead of dumping the whole page into context.
 
-pi-web-access does this thoroughly. We have zero protection beyond the `^https://` schema regex.
+### 7.2 Stored Content Retrieval (`get_search_content`)
 
-### 6.2 Domain Policy
+A fourth tool that lets the model retrieve previously-fetched full content by handle:
 
-```json
-{
-  "fetchContent": {
-    "domainPolicy": {
-      "allow": ["docs.example.com"],
-      "deny": ["old.example.com"]
-    }
-  }
-}
-```
-
-Check before every fetch. Deny wins on conflict.
-
-### 6.3 `answer` Mode for `web_fetch`
-
-Add `mode: "answer"` parameter. Instead of returning the full page markdown, run the extracted content through the session's active model with the user's `prompt` and return a grounded answer. Store the full content for `get_search_content` retrieval.
-
-This is the single biggest UX differentiator pi-web-access added recently — the model reads the page for you and answers your specific question.
-
-### 6.4 Stored Content Retrieval (`get_search_content` Tool)
-
-Register a third/fourth tool that lets the model retrieve previously-fetched full content by `responseId`:
 ```ts
 get_search_content({ responseId: "abc123", urlIndex: 0 })
 get_search_content({ responseId: "abc123", findText: "installation" })
 ```
 
-This replaces our spillover-to-filesystem approach with an in-memory content store that the model can query directly — no `read` tool call on a temp file needed.
+This would replace the current spillover-to-filesystem approach (`spillover.ts`, `.pi/cache/web-fetch/`) with an in-memory store the model queries directly — no separate `read` tool call on a temp file.
 
-### 6.5 Rate Limiting
+### 7.3 Rate Limiting
 
-Per-provider request budgets:
-- Brave: 1 req/s (free tier).
-- Tavily: default, no limit documented.
-- Exa: respect Retry-After headers.
-- All fetch: 3 concurrent, 30s timeout.
+Per-provider request budgets: Brave 1 req/s (free-tier limit), Tavily per documented limits, Exa respecting `Retry-After`. All fetches capped at 3 concurrent with a 30s timeout. A simple semaphore is enough — no need for a dependency.
 
-Use `p-limit` (already in pi-web-access's deps) or a simple semaphore.
+### 7.4 Domain Policy
 
-### 6.6 RSC / Next.js Flight Data Parser
+```json
+{
+  "fetchContent": {
+    "domainPolicy": { "allow": ["docs.example.com"], "deny": ["old.example.com"] }
+  }
+}
+```
 
-When HTML extraction yields an empty shell (common with Next.js SSR), parse the RSC flight data payload (`<script>self.__next_f.push(...)</script>`) to extract the real content. pi-web-access has `rsc-extract.ts` for this.
+Checked before every `safeFetch()` call, deny wins on conflict. Natural extension of 4.3's config file.
+
+### 7.5 RSC / Next.js Flight Data Parser
+
+When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate pages), parse the RSC flight-data payload (`<script>self.__next_f.push(...)</script>`) to recover the real content instead of falling through to 4.7's Jina fallback for a page that's actually fully present, just not in plain HTML.
 
 ---
 
@@ -345,126 +324,8 @@ When HTML extraction yields an empty shell (common with Next.js SSR), parse the 
 
 | Sprint | Work | Score Impact |
 |--------|------|:------------:|
-| **1** | 1.1–1.6 (foundation fixes) | 5→7.5 |
-| **2** | 2.1–2.3 (pi integration) + 4.1–4.3 (tests) | 7.5→8.5 |
-| **3** | 3.1–3.3 (Exa, config, source_check) + 5.1 (npm publish) | 8.5→9 |
-| **4** | 3.4–3.7 (GitHub, batch, fallback, retry) + 5.2–5.4 (commands, widget) | 9→9.5 |
-| **5** | 6.1–6.6 (SSRF, answer mode, stored content, RSC) | 9.5→10 |
-
----
-
-## Files Touched (Projected)
-
-```
-src/
-├── index.ts                 ← gut to ~80 LOC (factory only)
-├── tool-search.ts           ← NEW: web_search tool
-├── tool-fetch.ts            ← NEW: web_fetch tool  
-├── tool-source-check.ts     ← NEW: source_check tool
-├── tool-get-content.ts      ← NEW: get_search_content tool
-├── format.ts                ← NEW: result formatting
-├── section-selector.ts      ← NEW: shared section selection
-├── config.ts                ← NEW: JSON config loader
-├── ssrf.ts                  ← NEW: URL safety validation
-├── retry.ts                 ← NEW: retry wrapper
-├── content-store.ts         ← NEW: replaces spillover for model access
-├── types.ts                 ← extend with config types
-├── token-budget.ts          ← reduce to ratio math only (kill model table)
-├── token-counter.ts         ← simplify (drop remote Anthropic, keep heuristic + tiktoken)
-├── content-extractor.ts     ← unchanged
-├── content-processor.ts     ← use shared section-selector
-├── section-parser.ts        ← unchanged
-├── structured-extractor.ts  ← unchanged
-├── pdf-extractor.ts         ← use shared section-selector
-├── spillover.ts             ← accept cwd param, deprecate for model (keep for user read)
-├── keychain.ts              ← replace with config.ts, cross-platform
-├── search-aggregator.ts     ← unchanged
-├── search-cache.ts          ← unchanged
-├── provider-selector.ts     ← extend for Exa
-├── providers/
-│   ├── base.ts              ← unchanged
-│   ├── brave.ts             ← unchanged
-│   ├── tavily.ts            ← unchanged
-│   ├── exa.ts               ← NEW
-│   ├── jina.ts              ← NEW (fetch fallback only)
-│   ├── registry.ts          ← extend with fallback chain
-│   └── index.ts             ← unchanged
-├── github-extract.ts        ← NEW
-└── rsc-extract.ts           ← NEW
-
-tests/
-├── fixtures/                ← NEW: HTML/PDF test fixtures
-├── content-extractor.test.ts     ← NEW
-├── content-processor.test.ts     ← NEW
-├── providers/brave.test.ts       ← NEW
-├── providers/tavily.test.ts      ← NEW
-├── section-selector.test.ts      ← NEW
-├── integration.test.ts           ← NEW
-├── provider-selector.test.ts     ← update
-├── search-aggregator.test.ts     ← unchanged
-├── search-cache.test.ts          ← unchanged
-├── structured-extractor.test.ts  ← unchanged
-└── token-budget.test.ts          ← rewrite for ratio math
-```
-
----
-
-## Non-Goals
-
-These are things pi-web-access does that we deliberately skip:
-
-- **25+ search providers** — diminishing returns. Exa + Brave + Tavily covers 95% of use cases. Users who need SerpBase or Bright Data SERP should use pi-web-access.
-- **YouTube/video understanding** — requires Gemini integration + ffmpeg + yt-dlp. Out of scope for a web search extension. Use pi-web-access or a dedicated video extension.
-- **Browser cookie auth** — complex, platform-specific Chromium cookie decryption. Security surface too large.
-- **Curator UI** — pi-web-access's browser-based search curation window is impressive but complex (ephemeral HTTP server + SSE + HTML generation). Our advantage is being lean; a `/websearch` command with inline TUI selection is sufficient.
-- **OpenAI Responses API search** — tied to a specific provider's API. Our extension is provider-agnostic.
-
----
-
-## Audit Addendum (Aug 22 2026)
-
-Verified against the actual `web-search/` source, a live `npm test` run, and the current `pi-web-access` page/npm listing. The original 6.5/10 baseline and Phase 1–6 roadmap hold up well — most claims checked out exactly as written (335-LOC `index.ts`, ~26% test-file coverage, singleton `registry`, zero hits for retry/SSRF/`session_start`/CI). Six corrections folded in above:
-
-- 2.2 overstated "ignores `ctx.model`" — `web_fetch` already reads it; the real gap is `ctx.getContextUsage()`.
-- 2.3 overstated keychain "fails on Linux/Windows" — it degrades gracefully via the existing fallback chain.
-- 1.5's duplicated `selectSections()` is a live correctness bug (missing rank-sort in the PDF copy), not just DRY debt — reprioritize as Major.
-- 1.4's `process.cwd()` bug ships with a comment in the code that asserts the opposite of what it does.
-- New: `package.json` (0.3.3) hasn't been bumped to match today's CHANGELOG entry (0.3.4) — cheap fix, roll into 1.2.
-- 5.1 undersells existing progress — the pi package manifest already exists; only publish/rename is left.
-- Benchmark numbers (version, downloads) were a few days stale — corrected above; the feature claims (4 tools, 25 providers, zero-config Exa, SSRF guard, `answer` mode, `get_search_content`, RSC parsing) all check out against the live `pi-web-access` README.
-
-Unverified: the claim that the model table "went stale three times" (no git history included in the archive to check against).
-
----
-
-## Phase 1 Completion Log (v0.3.5 — Aug 22 2026)
-
-**Status:** All 6 items complete. `npm run check` green (typecheck + lint + 114 tests, 0 failures).
-
-| Item | Status | Notes |
-|------|:------:|-------|
-| 1.1 | ✅ | `MODEL_CONFIGS`/`PROVIDER_FALLBACKS`/`detectProvider` deleted. `token-budget.ts` reduced to `buildBudget()` + `buildUnknownBudget()`. Provider normalised from `event.model.provider`. |
-| 1.2 | ✅ | Old 22-test suite (model-name assertions) replaced with 19 tests on `buildBudget()` ratio math + provider normalisation. `package.json` bumped 0.3.3→0.3.5. |
-| 1.3 | ✅ | `pi.on("session_start", ...)` resets `cache = new SearchCache()`. |
-| 1.4 | ✅ | `CACHE_DIR` no longer captured at module load. `writeSpillover()` and `cleanExpiredSpillover()` accept `cwd?` param. Misleading comment removed. |
-| 1.5 | ✅ | `section-selector.ts` extracted with rank-sort (from `content-processor.ts`). `pdf-extractor.ts` old copy (no rank-sort) deleted. 10 new tests in `section-selector.test.ts`. |
-| 1.6 | ✅ | `index.ts` 335→69 LOC. New: `tool-search.ts`, `tool-fetch.ts`, `format.ts`. |
-
-## Phase 2 Completion Log (v0.3.6 — Aug 22 2026)
-
-**Status:** All 3 items complete. `npm run check` green (typecheck + lint + 120 tests, 0 failures).
-
-| Item | Status | Notes |
-|------|:------:|-------|
-| 2.1 | ✅ | `AnthropicTokenCounter` deleted. `createTokenCounter()` no longer accepts `apiKey`. `index.ts` no longer imports `keychain.ts` or resolves the Anthropic key. Anthropic models use heuristic (3.5 chars/token). |
-| 2.2 | ✅ | `tool-fetch.ts` calls `ctx.getContextUsage()` and reduces `maxContentTokens` via `effectiveContentBudget()`. 6 new tests. |
-| 2.3 | ✅ | `keychain.ts`: macOS Keychain gated behind `process.platform === "darwin"`. Error message is platform-appropriate. `.env` lookup accepts `cwd` param. |
-
-### Leftover / Deferred Items
-
-| Item | Phase | What | Why deferred |
-|------|:-----:|------|-------------|
-| CI workflow (GitHub Actions) | 1.2 | Wire `npm test` into CI so failures block merge | No `.github/workflows/` in the repo yet; `npm run check` is the local equivalent. Add when CI infra is set up. |
-| Singleton `ProviderRegistry` | 3+ | `registry.ts` exports a module-level singleton — not testable in isolation | Phase 3+ scope (provider design improvements). |
-| `TokenCountMode` type cleanup | — | `"exact_remote"` variant is unused after 2.1 | Cosmetic; harmless to keep in the union type. |
-| `ctx.modelRegistry.getProviderAuth()` for provider keys | 3+ | Use pi auth system for Brave/Tavily keys instead of `keychain.ts` | Requires understanding which providers pi manages vs extension-specific keys. Phase 3+ scope. |
+| ~~**1**~~ | ~~License conflict + npm name decision (Open — Project Foundation)~~ ✅ **Done v0.6.0** | Documentation 7.5→8.5, unblocks 6.1 |
+| **2** | 4.1 (fallback chain) + 4.3 (config file) | Provider Design 7→8, Ecosystem Fit 5.5→7 |
+| **3** | 4.2 (Exa zero-config) + 6.1 (publish) | Ecosystem Fit 7→8.5 |
+| **4** | 4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests | Feature Completeness 6.5→8, Testing 8→9 |
+| **5** | 7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC) | 9→9.5+ |

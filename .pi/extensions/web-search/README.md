@@ -27,10 +27,10 @@ The model **autonomously decides** when to search — no `/skill:` invocation ne
 
 ## Distribution
 
-This package is published as `web-search` and can be installed via Pi with:
+This package is published as `@svenhornaff/web-search` and can be installed via Pi with:
 
 ```bash
-pi install npm:web-search
+pi install npm:@svenhornaff/web-search
 ```
 
 The extension also registers user-facing commands and a shortcut:
@@ -233,4 +233,6 @@ pi -e ./src/index.ts
 
 ## License
 
-MIT
+Non-Commercial Source-Available License (NCSAL) — see [LICENSE](../../../../LICENSE) in the repository root.
+
+Commercial use requires written permission from the author. See [sven.hornaff@gmail.com](mailto:sven.hornaff@gmail.com).
