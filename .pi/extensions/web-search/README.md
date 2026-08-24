@@ -8,22 +8,26 @@ The model **autonomously decides** when to search — no `/skill:` invocation ne
 
 | Tool | What it does |
 |------|-------------|
-| `web_search` | Search the web via Brave or Tavily. Returns ranked results; Tavily results include full page content inline. |
+| `web_search` | Search the web via Exa, Brave, or Tavily. Provider chosen automatically by query type. Exa and Tavily results include full page content inline. |
 | `web_fetch` | Fetch a URL, extract clean markdown, rank sections by importance, respect model token budget (dynamic, session-aware). |
 
 ## Provider Design
 
-| | Brave | Tavily |
-|-|-------|--------|
-| **Search type** | Contextual / semantic SERP | AI-native keyword search |
-| **Result content** | Title + snippet (fetch needed for full page) | Title + snippet + **full page content** |
-| **AI summary** | No | Yes — prepended to first result |
-| **Freshness filter** | `day / week / month / year` | — |
-| **Search depth** | — | `basic` (1 credit) · `advanced` (2 credits) |
-| **Free tier** | $5/month credit (~1000 queries) | 1000 credits/month |
-| **`web_fetch` cost** | $0 (plain HTTP GET) | $0 (plain HTTP GET) |
+| | Exa | Brave | Tavily |
+|-|-----|-------|--------|
+| **Search type** | Neural / semantic | Contextual SERP | AI-native keyword |
+| **Best for** | AI/research/conceptual | News, releases | Deep research, comparisons |
+| **Result content** | Title + snippet + **full page text** | Title + snippet only | Title + snippet + **full page content** |
+| **AI summary** | No | No | Yes — prepended to first result |
+| **Freshness filter** | `day / week / month / year` | `day / week / month / year` | — |
+| **Search depth** | — | — | `basic` (1 credit) · `advanced` (2 credits) |
+| **Free tier** | 1000 searches/month | $5/month (~1000 queries) | 1000 credits/month |
+| **`web_fetch` cost** | $0 (plain HTTP GET) | $0 (plain HTTP GET) | $0 (plain HTTP GET) |
+| **Key env var** | `EXA_API_KEY` | `BRAVE_API_KEY` | `TAVILY_API_KEY` |
 
-**Rule**: `web_fetch` always uses a plain HTTP GET regardless of which provider was used for the preceding search. Routing `web_fetch` through a search API wastes credits and is unreliable.
+**Rule**: `web_fetch` always uses a plain HTTP GET regardless of which provider was used for the preceding search.
+
+**Auto-selection heuristics:** Exa → AI/ML/research/conceptual · Tavily → comparisons/guides · Brave → time-sensitive/news · Brave → default fallback.
 
 ## Distribution
 
@@ -83,7 +87,7 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 ```json
 {
   "defaultProvider": "auto",
-  "fallbackOrder": ["brave", "tavily"],
+  "fallbackOrder": ["exa", "brave", "tavily"],
   "maxResults": 5,
   "maxInlineContentChars": 30000
 }
@@ -91,8 +95,8 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `defaultProvider` | `"auto"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn’t specify one. `auto` = heuristic selection. |
-| `fallbackOrder` | `string[]` | `["brave","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
+| `defaultProvider` | `"auto"` \| `"exa"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn’t specify one. `auto` = heuristic selection. |
+| `fallbackOrder` | `string[]` | `["exa","brave","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
 | `maxResults` | number (1–20) | `5` | Default result count. |
 | `maxInlineContentChars` | number (≥1000) | `30000` | Max characters returned inline by `web_fetch` before spillover. |
 
@@ -101,23 +105,33 @@ to pick up changes without restarting Pi.
 
 ## Setup
 
-### Required: Brave Search API key
+### Exa API key (recommended — best for AI/research)
 
-Register at <https://api-dashboard.search.brave.com/register> — free $5/month credit included.
+Register at <https://dashboard.exa.ai> — 1000 free searches/month.
+
+**macOS:**
+```bash
+security add-generic-password -a "$USER" -s "exa-api-key" -w "YOUR_KEY" -U
+```
+**Any platform:**
+```bash
+export EXA_API_KEY="YOUR_KEY"
+```
+
+### Brave Search API key (recommended for news/time-sensitive)
+
+Register at <https://api-dashboard.search.brave.com/register> — free $5/month credit.
 
 **macOS:**
 ```bash
 security add-generic-password -a "$USER" -s "brave-api-key" -w "BSA..." -U
 ```
-
 **Any platform:**
 ```bash
-export BRAVE_API_KEY="BSA..."    # add to shell profile
-# or add to workspace .env file:
-echo 'BRAVE_API_KEY="BSA..."' >> .env
+export BRAVE_API_KEY="BSA..."
 ```
 
-### Optional: Tavily API key
+### Tavily API key (recommended for deep research)
 
 Register at <https://tavily.com> — 1000 free credits/month.
 
@@ -125,7 +139,6 @@ Register at <https://tavily.com> — 1000 free credits/month.
 ```bash
 security add-generic-password -a "$USER" -s "tavily-api-key" -w "tvly-..." -U
 ```
-
 **Any platform:**
 ```bash
 export TAVILY_API_KEY="tvly-..."
@@ -134,8 +147,10 @@ export TAVILY_API_KEY="tvly-..."
 ### Key resolution order
 
 1. macOS Keychain (macOS only — skipped on other platforms)
-2. Environment variable (`BRAVE_API_KEY`, `TAVILY_API_KEY`)
+2. Environment variable (`EXA_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`)
 3. Workspace `.env` file
+
+> At least one key is required. The fallback chain tries all configured providers automatically.
 
 ### Install
 
@@ -153,8 +168,8 @@ cd .pi/extensions/web-search && npm install
 |-----------|------|---------|-------|
 | `query` | string | — | 3–6 words recommended |
 | `max_results` | number | 5 | 1–20 |
-| `provider` | `brave` \| `tavily` | `brave` | |
-| `freshness` | `day` \| `week` \| `month` \| `year` | — | Brave only |
+| `provider` | `exa` \| `brave` \| `tavily` | auto | |
+| `freshness` | `day` \| `week` \| `month` \| `year` | — | Brave + Exa |
 | `depth` | `basic` \| `advanced` | `basic` | Tavily only |
 
 ### `web_fetch`
@@ -233,7 +248,8 @@ src/
     ├── base.ts           — SearchProvider interface
     ├── brave.ts          — Brave Search (contextual, freshness filters)
     ├── tavily.ts         — Tavily Search (keyword, full content)
-    ├── registry.ts       — Provider registry and default selection
+    ├── exa.ts            — Exa Search (neural semantic, fullContent, freshness)
+    ├── registry.ts       — Provider registry, fallback chain, parallel search
     └── index.ts          — Re-exports
 ```
 

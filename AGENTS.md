@@ -28,7 +28,7 @@ cd .pi/extensions
 npm install
 ```
 
-Requires `BRAVE_API_KEY` and/or `TAVILY_API_KEY` at runtime (env var, `.env`, or macOS Keychain — see `src/keychain.ts`). Not needed to build, lint, or run the test suite: providers accept an injected key in tests (`src/providers/brave.ts`, `tavily.ts` constructors) instead of resolving one.
+Requires `EXA_API_KEY`, `BRAVE_API_KEY`, and/or `TAVILY_API_KEY` at runtime (env var, `.env`, or macOS Keychain — see `src/keychain.ts`). At least one provider key is needed at runtime. Not needed to build, lint, or run the test suite: providers accept an injected key in tests (`src/providers/brave.ts`, `tavily.ts`, `exa.ts` constructors) instead of resolving one.
 
 ## Commands
 

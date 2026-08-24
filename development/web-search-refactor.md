@@ -162,26 +162,17 @@ _Goal: match `pi-web-access` on the features that matter, without chasing its br
 providers in `config.fallbackOrder` order; explicit `provider:` param
 still means no fallback. 7 tests in `tests/registry.test.ts`.
 
-### 4.2 Exa Provider (Zero-Config)
+### ~~4.2 Exa Provider~~ ✅ Done v0.8.0
 
-**Why:** Exa is the ecosystem default — `pi-web-access` needs zero API keys because Exa's MCP endpoint is free. This extension currently requires a Brave key at minimum, which is real onboarding friction.
+`src/providers/exa.ts` implemented against `POST https://api.exa.ai/search`.
+Resolves `EXA_API_KEY` via Keychain/env/`.env`. Returns `fullContent` alongside
+results (Exa `text` field). Registered first in fallback chain — if no key,
+fallback chain transparently moves to Brave/Tavily. 29 tests in `tests/exa.test.ts`.
 
-**How:** Add `src/providers/exa.ts` implementing the existing `SearchProvider` interface (`search()`, optional `fetch()`):
-
-```ts
-export class ExaProvider implements SearchProvider {
-  readonly name = "exa";
-  readonly type: ProviderType = "contextual";
-  constructor(private apiKey?: string) {}
-
-  async search(query: string, options?: SearchOptions, signal?: AbortSignal): Promise<SearchResponse> {
-    if (this.apiKey) return this.searchDirect(query, options, signal); // api.exa.ai
-    return this.searchViaMcp(query, options, signal); // hosted MCP endpoint, no key
-  }
-}
-```
-
-Register it first in the fallback chain (4.1) so a fresh install works with zero configuration — Brave/Tavily become opt-in upgrades, not requirements.
+**Note on zero-config**: Exa's hosted MCP server (`https://mcp.exa.ai/mcp`) works
+without a key but is an MCP protocol endpoint — not a REST API callable via `fetch()`.
+True zero-config REST search isn’t available from Exa’s public API. The fallback
+chain means users with only a Brave or Tavily key still get full functionality.
 
 ### ~~4.3 JSON Config File~~ ✅ Done v0.7.0
 
@@ -238,9 +229,11 @@ The gap isn't unit coverage — pure functions (aggregator, cache, selector, bud
 
 ## Open — Phase 6: Distribution & Ecosystem (Score: 5.5 → 9)
 
-### 6.1 Resolve the Name, Then Publish
+### ~~6.1 Resolve the Name, Then Publish~~ ✅ Name resolved v0.6.0 — publish pending npm login
 
-The pi package manifest already works locally (`"pi": {"extensions": ["./src/index.ts"]}`) — nothing to build there. What's blocking is purely the name: `web-search` is taken on npm (see Open — Project Foundation, above). Decide the permanent name — reusing `bulliexplorer-web-search` or picking a new one — update `package.json`, the root README's install instructions, and the extension README consistently, then `npm publish`. This has been reverted at least once already; treat the decision as final this time.
+Name is `@svenhornaff/web-search` (final, scoped, squatting-proof). Package is
+ready to publish — blocked only by `npm login` / `npm adduser` on this machine.
+Run `npm login` then `npm publish --access public` from `.pi/extensions/web-search/`.
 
 ### 6.2 Commands, Shortcut, Widget
 
@@ -293,6 +286,6 @@ When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate
 |--------|------|:------------:|
 | ~~**1**~~ | ~~License conflict + npm name decision (Open — Project Foundation)~~ ✅ **Done v0.6.0** | Documentation 7.5→8.5, unblocks 6.1 |
 | ~~**2**~~ | ~~4.1 (fallback chain) + 4.3 (config file)~~ ✅ **Done v0.7.0** | Provider Design 7→8, Ecosystem Fit 5.5→7 |
-| **3** | 4.2 (Exa zero-config) + 6.1 (publish) | Ecosystem Fit 7→8.5 |
+| ~~**3**~~ | ~~4.2 (Exa provider) + 6.1 (publish name resolved)~~ ✅ **Done v0.8.0** (publish pending npm login) | Ecosystem Fit 7→8.5 |
 | **4** | 4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests | Feature Completeness 6.5→8, Testing 8→9 |
 | **5** | 7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC) | 9→9.5+ |

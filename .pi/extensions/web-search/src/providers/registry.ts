@@ -10,17 +10,21 @@
 import type { SearchProvider, SearchOptions, SearchResponse } from "./base.js";
 import { BraveProvider } from "./brave.js";
 import { TavilyProvider } from "./tavily.js";
+import { ExaProvider } from "./exa.js";
 
 /** Available provider names */
-export type ProviderName = "brave" | "tavily";
+export type ProviderName = "exa" | "brave" | "tavily";
 
 /** Provider registry singleton */
 export class ProviderRegistry {
   private providers = new Map<ProviderName, SearchProvider>();
-  private defaultProvider: ProviderName = "brave";
+  private defaultProvider: ProviderName = "exa";
 
   constructor() {
-    // Register built-in providers
+    // Exa registered first — it becomes the default when a key is present
+    // and the fallback chain starts with it. If no key is configured,
+    // search() throws and the fallback chain moves to brave/tavily.
+    this.register("exa", new ExaProvider());
     this.register("brave", new BraveProvider());
     this.register("tavily", new TavilyProvider());
   }

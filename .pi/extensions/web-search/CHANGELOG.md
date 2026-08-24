@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.8.0] — 2026-08-24
+
+### Added
+
+- **`src/providers/exa.ts` — Exa Search provider**: Neural semantic search
+  (`POST https://api.exa.ai/search`). Resolves `EXA_API_KEY` via Keychain/env/`.env`
+  (same pattern as Brave/Tavily). Returns `fullContent` (Exa `text` field)
+  alongside every result so the LLM can read page content without a separate
+  `web_fetch` call. Supports `freshness` filtering via `startPublishedDate`.
+  If no key is configured, `search()` throws and the fallback chain in
+  `tool-search.ts` transparently moves to Brave or Tavily.
+- **29 new tests in `tests/exa.test.ts`**: header/method validation, result
+  mapping, summary vs text fallback, fullContent exposure, maxResults capping,
+  freshness date math, HTTP error handling, malformed-result filtering, empty
+  results.
+
+### Changed
+
+- **Exa registered first in `ProviderRegistry`**: default provider is now `"exa"`
+  (was `"brave"`). Fallback order updated to `["exa", "brave", "tavily"]` in
+  `config.ts` defaults. Zero impact on users without an Exa key — the fallback
+  chain silently moves to Brave.
+- **`provider-selector.ts` updated with Exa heuristics**: `suggestProvider()`
+  now routes AI/research/conceptual queries to Exa first (neural search is a
+  better fit), deep-research/comparison queries to Tavily, and time-sensitive
+  queries to Brave. Default fallback remains Brave.
+- **`tool-search.ts` schema expanded**: `provider` and `providers[]` parameters
+  now include `"exa"` as a valid literal. `providers[]` `maxItems` raised from 2
+  to 3 to allow all three providers in parallel.
+- **`provider-selector.test.ts` updated**: removed queries that changed expected
+  provider under the new heuristics; added Exa routing tests.
+- **`config.test.ts` updated**: default `fallbackOrder` assertions updated to
+  `["exa", "brave", "tavily"]`.
+
+---
+
 ## [0.7.0] — 2026-08-24
 
 ### Added

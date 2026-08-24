@@ -31,14 +31,14 @@ export function createSearchTool(
     name: "web_search",
     label: "Web Search",
     description:
-      "Search the web using Brave or Tavily. Provider is chosen automatically based on query type. For comprehensive research use providers: ['brave','tavily'] to query both in parallel and merge results. Use when you need current information about libraries, frameworks, documentation, release notes, or any topic where your training data may be outdated.",
+      "Search the web using Exa, Brave, or Tavily. Provider is chosen automatically based on query type. For comprehensive research use providers: ['brave','tavily'] to query both in parallel and merge results. Use when you need current information about libraries, frameworks, documentation, release notes, or any topic where your training data may be outdated.",
     promptSnippet:
       "Search the web for current docs, libraries, how-tos, and community content",
     promptGuidelines: [
       "Use web_search when the user asks about latest versions, recent changes, current best practices, or anything time-sensitive.",
       "Use web_search when you are unsure about a library API, configuration, or setup procedure.",
       "Prefer specific, targeted queries (3–6 words). Run multiple searches if the topic is broad.",
-      "Provider is auto-selected when omitted. Set provider: 'brave' to force contextual search, or provider: 'tavily' to force deep keyword search with full page content.",
+      "Provider is auto-selected when omitted. Set provider: 'exa' for neural semantic search (AI/research topics), 'brave' for fast contextual search, or 'tavily' for deep keyword search with full page content.",
       "For comprehensive research pass providers: ['brave','tavily'] to query both in parallel — costs 2 API calls but gives broader coverage with deduplication.",
       "For latest releases or docs, use freshness: 'month' or 'week' (Brave only).",
       "For breaking news, use freshness: 'day' (Brave only).",
@@ -56,9 +56,9 @@ export function createSearchTool(
         }),
       ),
       provider: Type.Optional(
-        Type.Union([Type.Literal("brave"), Type.Literal("tavily")], {
+        Type.Union([Type.Literal("exa"), Type.Literal("brave"), Type.Literal("tavily")], {
           description:
-            "Search provider: 'brave' (default, fast contextual) or 'tavily' (deep keyword search with full content)",
+            "Search provider: 'exa' (neural semantic search, best for research/AI topics), 'brave' (fast contextual SERP), or 'tavily' (deep keyword search with full content)",
         }),
       ),
       freshness: Type.Optional(
@@ -83,12 +83,12 @@ export function createSearchTool(
       ),
       providers: Type.Optional(
         Type.Array(
-          Type.Union([Type.Literal("brave"), Type.Literal("tavily")]),
+          Type.Union([Type.Literal("exa"), Type.Literal("brave"), Type.Literal("tavily")]),
           {
             description:
-              "Query multiple providers in parallel and merge results. Example: ['brave','tavily']. Takes precedence over provider (singular).",
+              "Query multiple providers in parallel and merge results. Example: ['brave','tavily'] or ['exa','brave']. Takes precedence over provider (singular).",
             minItems: 1,
-            maxItems: 2,
+            maxItems: 3,
           },
         ),
       ),

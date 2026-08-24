@@ -5,4 +5,5 @@
 export * from "./base.js";
 export * from "./brave.js";
 export * from "./tavily.js";
+export * from "./exa.js";
 export * from "./registry.js";

@@ -44,12 +44,12 @@ export interface WebSearchConfig {
 
 const DEFAULTS: WebSearchConfig = {
   defaultProvider: "auto",
-  fallbackOrder: ["brave", "tavily"],
+  fallbackOrder: ["exa", "brave", "tavily"],
   maxResults: 5,
   maxInlineContentChars: 30_000,
 };
 
-const VALID_PROVIDERS: Set<string> = new Set(["brave", "tavily"]);
+const VALID_PROVIDERS: Set<string> = new Set(["exa", "brave", "tavily"]);
 
 /** Raw shape from the JSON file — all fields optional and unvalidated. */
 interface RawConfig {

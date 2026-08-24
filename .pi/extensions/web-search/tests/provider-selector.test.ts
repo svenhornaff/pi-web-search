@@ -2,23 +2,59 @@ import { test, describe } from "node:test";
 import { strict as assert } from "node:assert";
 import { suggestProvider } from "../src/provider-selector.ts";
 
-// ── Tavily patterns ───────────────────────────────────────────────────────
+// ── Exa patterns (neural / semantic / research) ───────────────────────────
+
+describe("routes to exa", () => {
+  const research = [
+    "research paper on transformers",
+    "arxiv preprint LLM survey",
+    "academic study on attention mechanisms",
+    "survey of large language models",
+    "literature review machine learning",
+  ];
+  for (const q of research) {
+    test(`research: "${q}"`, () => assert.equal(suggestProvider(q), "exa"));
+  }
+
+  const conceptual = [
+    "how does the GIL work in Python",
+    "why do transformers use attention",
+    "how does a neural network work",
+    "explain Python descriptors",
+    "understand asyncio event loop",
+  ];
+  for (const q of conceptual) {
+    test(`conceptual: "${q}"`, () => assert.equal(suggestProvider(q), "exa"));
+  }
+
+  const aiTopics = [
+    "machine learning inference optimization",
+    "deep learning framework comparison",
+    "neural network architecture design",
+    "large language model fine-tuning",
+    "LLM tokenization strategies",
+    "transformer attention heads",
+  ];
+  for (const q of aiTopics) {
+    test(`AI topic: "${q}"`, () => assert.equal(suggestProvider(q), "exa"));
+  }
+});
+
+// ── Tavily patterns (deep research / full content) ────────────────────────
 
 describe("routes to tavily", () => {
-  // comparison keywords
   const comparisons = [
     "compare Pydantic v1 vs v2",
     "FastAPI vs Django performance",
     "uv versus poetry packaging",
     "benchmark asyncio vs trio",
     "difference between pip and uv",
-    "FastAPI vs. Starlette",       // vs. with dot
+    "FastAPI vs. Starlette",
   ];
   for (const q of comparisons) {
     test(`comparison: "${q}"`, () => assert.equal(suggestProvider(q), "tavily"));
   }
 
-  // depth/guide keywords
   const depth = [
     "comprehensive guide to uv workspaces",
     "complete guide Python packaging 2026",
@@ -31,19 +67,17 @@ describe("routes to tavily", () => {
     test(`depth: "${q}"`, () => assert.equal(suggestProvider(q), "tavily"));
   }
 
-  // understanding keywords
-  const understanding = [
+  const guides = [
     "best practices for FastAPI auth",
-    "how does the GIL work in Python",
-    "explain Python descriptors",
-    "understand asyncio event loop",
+    "step-by-step tutorial FastAPI",
+    "getting started with uv",
   ];
-  for (const q of understanding) {
-    test(`understanding: "${q}"`, () => assert.equal(suggestProvider(q), "tavily"));
+  for (const q of guides) {
+    test(`guide: "${q}"`, () => assert.equal(suggestProvider(q), "tavily"));
   }
 });
 
-// ── Brave patterns ────────────────────────────────────────────────────────
+// ── Brave patterns (time-sensitive / SERP) ────────────────────────────────
 
 describe("routes to brave", () => {
   const timeSensitive = [
@@ -69,7 +103,7 @@ describe("defaults to brave", () => {
     "configure pyproject.toml uv",
     "FastAPI Pydantic v2 migration",
     "uv workspace setup",
-    "Python type hints tutorial",
+    "Python type hints",
     "",
     "   ",
   ];
@@ -81,17 +115,27 @@ describe("defaults to brave", () => {
 // ── Case insensitivity ────────────────────────────────────────────────────
 
 describe("case insensitive", () => {
-  test("COMPARE uppercase", () => assert.equal(suggestProvider("COMPARE Python frameworks"), "tavily"));
-  test("LATEST uppercase",  () => assert.equal(suggestProvider("LATEST FastAPI release"),    "brave"));
-  test("Mixed case",        () => assert.equal(suggestProvider("Best Practices FastAPI"),    "tavily"));
+  test("COMPARE uppercase → tavily", () => assert.equal(suggestProvider("COMPARE Python frameworks"), "tavily"));
+  test("LATEST uppercase → brave",   () => assert.equal(suggestProvider("LATEST FastAPI release"), "brave"));
+  test("RESEARCH PAPER uppercase → exa", () => assert.equal(suggestProvider("RESEARCH PAPER transformers"), "exa"));
+  test("LLM uppercase → exa",        () => assert.equal(suggestProvider("LLM architecture overview"), "exa"));
 });
 
-// ── Precedence (tavily patterns checked first) ────────────────────────────
+// ── Precedence ────────────────────────────────────────────────────────────
 
 describe("precedence", () => {
+  test("exa pattern wins over tavily when both match", () => {
+    // "research paper" (exa) + "comprehensive guide" (tavily) → exa wins (checked first)
+    assert.equal(suggestProvider("comprehensive research paper survey"), "exa");
+  });
+
   test("tavily pattern wins over brave when both match", () => {
-    // "latest" would be brave, but "compare" is checked first → tavily
-    const q = "compare latest Python frameworks";
-    assert.equal(suggestProvider(q), "tavily");
+    // "latest" (brave) + "compare" (tavily) → tavily wins (checked before brave)
+    assert.equal(suggestProvider("compare latest Python frameworks"), "tavily");
+  });
+
+  test("exa pattern wins over brave", () => {
+    // "neural network" (exa) + "latest" (brave) → exa wins
+    assert.equal(suggestProvider("latest neural network research"), "exa");
   });
 });
