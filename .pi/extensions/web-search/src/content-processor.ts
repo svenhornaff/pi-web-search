@@ -13,6 +13,37 @@ import {
 } from "./section-parser.js";
 import { selectSections } from "./section-selector.js";
 import { writeSpillover } from "./spillover.js";
+import { safeFetch, readBoundedText } from "./safe-fetch.js";
+
+/**
+ * Minimum token count to consider extraction "successful".
+ * Below this threshold we try the Jina reader fallback.
+ */
+const MIN_CONTENT_TOKENS = 50;
+
+/**
+ * Jina Reader fallback for JS-rendered / cookie-walled pages.
+ * https://r.jina.ai/<url> returns clean markdown, no API key needed.
+ * Returns the reader markdown on success, null if unavailable.
+ */
+async function fetchViaJina(url: string): Promise<string | null> {
+  try {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const response = await safeFetch(jinaUrl, {
+      headers: {
+        Accept: "text/plain, text/markdown, */*",
+        "User-Agent": "Mozilla/5.0 (compatible; pi-web-search/0.8; +https://pi.dev)",
+        // Ask Jina for markdown output
+        "X-Return-Format": "markdown",
+      },
+    });
+    if (!response.ok) return null;
+    const text = await readBoundedText(response);
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /** Process HTML into structured content within token budget */
 export async function processContent(
@@ -23,7 +54,23 @@ export async function processContent(
   cwd?: string,
 ): Promise<ExtractedContent> {
   // Step 1: Extract clean markdown
-  const { title, markdown, excerpt } = await extractMarkdown(html, url);
+  const extracted0 = await extractMarkdown(html, url);
+  const { title } = extracted0;
+  let { markdown, excerpt } = extracted0;
+
+  // Step 1b: JS-render fallback via Jina Reader
+  // When extraction yields near-empty content (JS-rendered page, cookie wall,
+  // etc.), try https://r.jina.ai/<url> which handles JS rendering for free.
+  // Only triggered when content is genuinely sparse, not just a small page.
+  const quickTokenEstimate = Math.ceil(markdown.length / 4);
+  if (quickTokenEstimate < MIN_CONTENT_TOKENS && url.startsWith("https://")) {
+    const jinaMarkdown = await fetchViaJina(url);
+    if (jinaMarkdown && Math.ceil(jinaMarkdown.length / 4) > quickTokenEstimate) {
+      markdown = jinaMarkdown;
+      // Re-derive excerpt from Jina content if we didn't have one
+      if (!excerpt) excerpt = jinaMarkdown.slice(0, 200).replace(/\n+/g, " ").trim();
+    }
+  }
 
   // Step 2: Parse into sections
   const sections = parseMarkdownSections(markdown, budget.provider);

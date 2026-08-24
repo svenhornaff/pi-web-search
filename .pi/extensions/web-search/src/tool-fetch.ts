@@ -12,6 +12,7 @@ import { extractPDF } from "./pdf-extractor.js";
 import { buildFetchResponse } from "./format.js";
 import { cleanExpiredSpillover } from "./spillover.js";
 import { safeFetch, readBoundedArrayBuffer, readBoundedText } from "./safe-fetch.js";
+import { matchGitHubUrl, fetchGitHub } from "./github-handler.js";
 
 interface FetchParams {
   url: string;
@@ -86,6 +87,28 @@ export function createFetchTool(
       }
 
       // ── HTML path ─────────────────────────────────────────────────────
+      // ── GitHub path ────────────────────────────────────────────────
+      // Detect GitHub URLs before generic HTML extraction: blob files go to
+      // raw.githubusercontent.com; tree listings and repo roots use the API.
+      // Falls back to HTML if the GitHub handler returns null.
+      const ghMatch = matchGitHubUrl(params.url);
+      if (ghMatch) {
+        const ghResult = await fetchGitHub(params.url, ghMatch, signal);
+        if (ghResult) {
+          const ghExtracted = await processContent(
+            ghResult.markdown,
+            ghResult.url,
+            budget,
+            counter,
+            cwd,
+          );
+          ghExtracted.metadata.title = ghResult.title;
+          const base = buildFetchResponse(ghResult.url, ghExtracted, budget);
+          return { ...base, details: { ...base.details, githubStrategy: ghResult.strategy } };
+        }
+        // GitHub handler failed — fall through to generic HTML
+      }
+
       const html = await readBoundedText(response);
       const extracted = await processContent(html, response.url, budget, counter, cwd);
       return buildFetchResponse(response.url, extracted, budget);

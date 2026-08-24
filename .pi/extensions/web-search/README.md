@@ -8,8 +8,8 @@ The model **autonomously decides** when to search — no `/skill:` invocation ne
 
 | Tool | What it does |
 |------|-------------|
-| `web_search` | Search the web via Exa, Brave, or Tavily. Provider chosen automatically by query type. Exa and Tavily results include full page content inline. |
-| `web_fetch` | Fetch a URL, extract clean markdown, rank sections by importance, respect model token budget (dynamic, session-aware). |
+| `web_search` | Search via Exa, Brave, or Tavily. Provider auto-selected. Supports `queries[]` for parallel multi-angle research with deduplication. |
+| `web_fetch` | Fetch a URL → clean markdown. GitHub URLs routed to raw/API. JS-rendered pages fall back to Jina Reader. Token-budget aware. |
 
 ## Provider Design
 
@@ -243,6 +243,7 @@ src/
 ├── search-cache.ts       — In-memory search result cache (reset on session_start)
 ├── search-aggregator.ts  — Multi-provider result deduplication and ranking
 ├── provider-selector.ts  — Automatic provider selection heuristics
+├── github-handler.ts     — GitHub URL routing: blob→raw, tree→API listing, root→README+tree
 ├── structured-extractor.ts — JSON-LD / OpenGraph / meta extraction
 └── providers/
     ├── base.ts           — SearchProvider interface

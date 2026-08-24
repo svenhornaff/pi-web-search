@@ -192,38 +192,30 @@ on every `session_start`. Fields: `defaultProvider`, `fallbackOrder`, `maxResult
 
 No new infrastructure needed — this is a composition of the two existing tools plus a structured output shape.
 
-### 4.5 GitHub URL Handling
+### ~~4.5 GitHub URL Handling~~ ✅ Done v0.9.0
 
-**Why:** `web_fetch` currently treats every URL identically, including GitHub pages, which is wasteful — a `github.com/owner/repo` URL rendered as HTML loses the tree structure a `git clone --depth 1` or the GitHub API would give directly.
+`src/github-handler.ts` routes blob/tree/root URLs to raw.githubusercontent.com
+or the GitHub API before falling through to HTML. 13 tests in `tests/github-handler.test.ts`.
 
-**How:** In `tool-fetch.ts`, detect GitHub URL patterns before falling through to generic HTML extraction:
-- `/owner/repo` → tree + README via the GitHub API (`api.github.com/repos/...`) or a shallow clone.
-- `/owner/repo/blob/...` → `raw.githubusercontent.com` direct fetch.
-- `/owner/repo/tree/...` → directory listing via the API.
+### ~~4.6 Batch Queries~~ ✅ Done v0.9.0
 
-Cache API responses per session; if shallow-cloning, clean up on `session_shutdown` (see the Open Foundation item above — this gives that hook a second reason to exist).
+`queries: string[]` (2–5) added to `web_search`. Runs in parallel via
+`Promise.allSettled`, deduplicates with `search-aggregator.ts`. Cache keyed on
+joined query string. 3 batch tests in `tests/tool-search.test.ts`.
 
-### 4.6 Batch Queries
+### ~~4.7 JS-Render Fallback~~ ✅ Done v0.9.0
 
-**Why:** `web_search` takes one `query` string. Multi-angle research (comparisons, "what changed between X and Y") currently costs N separate tool round-trips.
-
-**How:** Add `queries: string[]` as an alternative to `query`, run in parallel against the selected provider(s) via `Promise.allSettled` (the same pattern `searchAll()` already uses), and deduplicate across queries using the existing `search-aggregator.ts`.
-
-### 4.7 Fetch Fallback for JS-Rendered / Blocked Pages
-
-**Why:** The current pipeline (`linkedom` + Turndown) only sees server-rendered HTML. Cookie walls and JS-hydrated pages return an empty or near-empty extraction with no recovery path.
-
-**How:** When `content-processor.ts` detects an empty/near-empty extraction, fall back to a reader service (e.g. `https://r.jina.ai/<url>`) that handles JS rendering, no API key required. Register it as an optional provider-style fetch path in `registry.ts`, not a first-class `SearchProvider` — it only ever serves `web_fetch`, never `web_search`.
+Jina Reader fallback (`https://r.jina.ai/<url>`) added to `content-processor.ts`.
+Triggered when extraction yields < 50 estimated tokens. No API key needed.
 
 ---
 
-## Open — Phase 5: Testing (Score: 8 → 9)
+## ~~Open — Phase 5: Testing~~ ✅ Done v0.9.0
 
-The gap isn't unit coverage — pure functions (aggregator, cache, selector, budget, retry, SSRF) are well tested (140 tests, 12/24 files). What's missing:
-
-- **Integration tests.** Nothing exercises a tool's `execute()` end-to-end against a mocked `fetch()` and asserts the *formatted* tool-output shape the model actually receives. `content-pipeline.test.ts` gets closest (real HTML fixture → `processContent()`) but stops short of going through `tool-fetch.ts`/`tool-search.ts` themselves.
-- **`tool-search.ts`'s `execute()` doesn't take `ctx`.** Harmless today (search needs no budget/cwd), but 4.3's config loading and 4.6's batch queries will need it. Align the signature when touching this file next rather than retrofitting later.
-- **Provider mocks are minimal.** `providers.test.ts` covers key injection and basic request/response shape, but not the fallback behavior 4.1 will add.
+- Integration tests added: `tests/tool-search.test.ts` (9 tests, execute() end-to-end),
+  `tests/github-handler.test.ts` (13 tests).
+- `execute()` signature aligned (ctx param).
+- Provider fallback behavior covered in `tests/registry.test.ts` (Sprint 2).
 
 ---
 
@@ -287,5 +279,5 @@ When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate
 | ~~**1**~~ | ~~License conflict + npm name decision (Open — Project Foundation)~~ ✅ **Done v0.6.0** | Documentation 7.5→8.5, unblocks 6.1 |
 | ~~**2**~~ | ~~4.1 (fallback chain) + 4.3 (config file)~~ ✅ **Done v0.7.0** | Provider Design 7→8, Ecosystem Fit 5.5→7 |
 | ~~**3**~~ | ~~4.2 (Exa provider) + 6.1 (publish name resolved)~~ ✅ **Done v0.8.0** (publish pending npm login) | Ecosystem Fit 7→8.5 |
-| **4** | 4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests | Feature Completeness 6.5→8, Testing 8→9 |
+| ~~**4**~~ | ~~4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests~~ ✅ **Done v0.9.0** | Feature Completeness 6.5→8, Testing 8→9 |
 | **5** | 7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC) | 9→9.5+ |

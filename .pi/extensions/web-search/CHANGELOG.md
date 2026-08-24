@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.9.0] — 2026-08-24
+
+### Added
+
+- **4.5 — GitHub URL handling (`src/github-handler.ts`)**: `web_fetch` now
+  detects GitHub URLs before generic HTML extraction and routes them optimally:
+  - `/owner/repo/blob/ref/path` → `raw.githubusercontent.com` direct fetch;
+    non-markdown files wrapped in a language-appropriate code fence.
+  - `/owner/repo/tree/ref/path` → GitHub API directory listing as a markdown
+    table.
+  - `/owner/repo` (repo root) → GitHub API README + top-level file tree,
+    fetched in parallel.
+  - Falls back to generic HTML extraction if the GitHub handler returns null
+    (auth-required repos, rate limits, unexpected errors).
+  - Response `details` includes `githubStrategy` field for debugging.
+
+- **4.6 — Batch queries (`queries[]` in `web_search`)**: `web_search` now
+  accepts `queries: string[]` (2–5 queries) as an alternative to `query`. Runs
+  all queries in parallel against the same provider, then deduplicates results
+  with the existing `search-aggregator.ts`. Cache keyed on the joined query
+  string. Response `details` includes `batch: true` and `queries[]`.
+
+- **4.7 — JS-render fallback (Jina Reader)**: `content-processor.ts` now
+  detects near-empty HTML extractions (< 50 estimated tokens) and falls back to
+  `https://r.jina.ai/<url>`, which renders JS and bypasses cookie walls. No
+  API key required. Only triggered when content is genuinely sparse.
+
+- **Phase 5 — Integration tests**:
+  - `tests/tool-search.test.ts` (9 tests): `execute()` end-to-end with mocked
+    `fetch()`; asserts formatted output shape, `details` fields, cache hit/miss,
+    batch mode, missing-query guard, fallback chain.
+  - `tests/github-handler.test.ts` (13 tests): `matchGitHubUrl()` pattern
+    matching; `fetchGitHub()` raw/tree/repo-root strategies with mocked fetch;
+    error/fallback cases.
+
+### Changed
+
+- **`tool-search.ts`**: `query` parameter is now `Optional` (required when
+  `queries[]` not provided; guarded at runtime). `SearchDetails` interface
+  introduced to give `execute()` a stable return type across all code paths.
+- **`content-processor.ts`**: `extractMarkdown` result destructured via
+  intermediate variable to allow `let` on `markdown`/`excerpt` (Jina fallback
+  may reassign them) while keeping `title` as `const`.
+
+---
+
 ## [0.8.0] — 2026-08-24
 
 ### Added

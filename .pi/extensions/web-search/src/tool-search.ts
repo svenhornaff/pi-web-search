@@ -10,8 +10,21 @@ import type { SearchCache } from "./search-cache.js";
 import { formatSearchResults } from "./format.js";
 import type { WebSearchConfig } from "./config.js";
 
+interface SearchDetails {
+  query?: string;
+  queries?: string[];
+  providers: string[];
+  resultCount: number;
+  deduplicatedFrom: number;
+  overlap: string[];
+  results: unknown[];
+  cached: boolean;
+  batch?: boolean;
+}
+
 interface SearchParams {
   query: string;
+  queries?: string[]; // batch mode: multiple queries run in parallel
   max_results?: number;
   provider?: string;
   freshness?: string;
@@ -31,23 +44,29 @@ export function createSearchTool(
     name: "web_search",
     label: "Web Search",
     description:
-      "Search the web using Exa, Brave, or Tavily. Provider is chosen automatically based on query type. For comprehensive research use providers: ['brave','tavily'] to query both in parallel and merge results. Use when you need current information about libraries, frameworks, documentation, release notes, or any topic where your training data may be outdated.",
+      "Search the web using Exa, Brave, or Tavily. Provider chosen automatically by query type. Use queries[] for multi-angle research (runs in parallel and deduplicates). For comprehensive research use providers: ['brave','tavily'] to query both in parallel. Use when you need current information about libraries, frameworks, documentation, release notes, or any topic where your training data may be outdated.",
     promptSnippet:
       "Search the web for current docs, libraries, how-tos, and community content",
     promptGuidelines: [
       "Use web_search when the user asks about latest versions, recent changes, current best practices, or anything time-sensitive.",
       "Use web_search when you are unsure about a library API, configuration, or setup procedure.",
-      "Prefer specific, targeted queries (3–6 words). Run multiple searches if the topic is broad.",
+      "Prefer specific, targeted queries (3–6 words). Use queries: ['q1','q2'] for multi-angle research in one call — runs in parallel and deduplicates results.",
       "Provider is auto-selected when omitted. Set provider: 'exa' for neural semantic search (AI/research topics), 'brave' for fast contextual search, or 'tavily' for deep keyword search with full page content.",
       "For comprehensive research pass providers: ['brave','tavily'] to query both in parallel — costs 2 API calls but gives broader coverage with deduplication.",
       "For latest releases or docs, use freshness: 'month' or 'week' (Brave only).",
       "For breaking news, use freshness: 'day' (Brave only).",
     ],
     parameters: Type.Object({
-      query: Type.String({
+      query: Type.Optional(Type.String({
         description:
-          "Search query — keep it short and specific (3–6 words). Example: 'FastAPI Pydantic v2 migration'",
-      }),
+          "Search query — keep it short and specific (3–6 words). Example: 'FastAPI Pydantic v2 migration'. Use queries[] instead for multi-angle research.",
+      })),
+      queries: Type.Optional(Type.Array(Type.String(), {
+        description:
+          "Batch mode: multiple queries run in parallel and deduplicated. Use for multi-angle research, comparisons, or covering related sub-topics in one call. Takes precedence over query (singular).",
+        minItems: 2,
+        maxItems: 5,
+      })),
       max_results: Type.Optional(
         Type.Number({
           description: "Number of results to return (default 5, max 20)",
@@ -94,9 +113,80 @@ export function createSearchTool(
       ),
     }),
 
-    async execute(_toolCallId: string, _params: unknown, signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
+    async execute(_toolCallId: string, _params: unknown, signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown): Promise<{ content: Array<{ type: "text"; text: string }>; details: SearchDetails }> {
       const params = _params as SearchParams;
       const config = resolveConfig();
+
+      // ── Batch mode: queries[] ─────────────────────────────────────────────
+      // Run multiple queries in parallel against the same provider(s),
+      // then deduplicate across results using the same aggregator as multi-provider.
+      if (params.queries && params.queries.length >= 2) {
+        const batchQueries = params.queries;
+        const batchProvider =
+          (params.provider as ProviderName | undefined) ??
+          suggestProvider(batchQueries[0] ?? "");
+        const batchOptions = {
+          maxResults: params.max_results ?? 5,
+          freshness: params.freshness as "day" | "week" | "month" | "year" | undefined,
+          depth: params.depth as "basic" | "advanced" | undefined,
+        };
+
+        const cache = resolveCache();
+        const batchCacheKey = cache.key(batchQueries.join("|"), [batchProvider], batchOptions);
+        const batchCached = cache.get(batchCacheKey);
+
+        if (batchCached) {
+          return {
+            content: [{ type: "text" as const, text: formatSearchResults(batchCached, batchProvider) }],
+            details: {
+              queries: batchQueries,
+              providers: [batchProvider],
+              resultCount: batchCached.length,
+              deduplicatedFrom: batchCached.length,
+              overlap: [] as string[],
+              results: batchCached,
+              cached: true,
+              batch: true,
+            },
+          };
+        }
+
+        const batchResponses = await Promise.allSettled(
+          batchQueries.map((q) =>
+            registry.searchWithFallback(
+              [batchProvider, ...(config?.fallbackOrder ?? ["brave", "tavily"] as ProviderName[]).filter((p) => p !== batchProvider)],
+              q,
+              batchOptions,
+              signal,
+            )
+          ),
+        );
+
+        const fulfilled = batchResponses
+          .filter((r): r is PromiseFulfilledResult<typeof r extends PromiseFulfilledResult<infer V> ? V : never> => r.status === "fulfilled")
+          .map((r) => r.value);
+
+        if (fulfilled.length === 0) throw new Error("All batch queries failed");
+
+        const aggregated = aggregate(fulfilled);
+        cache.set(batchCacheKey, aggregated.results);
+        cache.evictExpired();
+
+        return {
+          content: [{ type: "text" as const, text: formatSearchResults(aggregated.results, aggregated.meta.providers) }],
+          details: {
+            queries: batchQueries,
+            providers: aggregated.meta.providers as ProviderName[],
+            resultCount: aggregated.results.length,
+            deduplicatedFrom: aggregated.meta.totalBeforeDedup,
+            overlap: aggregated.meta.overlap,
+            results: aggregated.results,
+            cached: false,
+            batch: true,
+          },
+        };
+      }
+
       const options = {
         maxResults: params.max_results ?? 5,
         freshness: params.freshness as
@@ -107,6 +197,9 @@ export function createSearchTool(
           | undefined,
         depth: params.depth as "basic" | "advanced" | undefined,
       };
+
+      // Require query for non-batch path
+      if (!params.query) throw new Error("query is required when queries[] is not provided");
 
       // providers[] wins over provider (singular) wins over auto-selection
       const requestedProviders = params.providers as
