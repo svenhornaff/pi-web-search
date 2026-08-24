@@ -181,12 +181,17 @@ Covered under 1.2 — listed here too because it's a testing-infrastructure chan
 
 The Phase 0 fix mutates the shared `registry` singleton (`registry.register("brave", new BraveProvider("test-brave-key"))`) rather than constructing an isolated instance. Fine for the current single-process test run since only this file touches the singleton's search behavior, but it's a latent footgun — a future test file that also imports `registry` inherits whatever the last-run file left in it. `registry.test.ts` already shows the cleaner pattern (isolated `new ProviderRegistry()` instances). **Fixed:** fallback tests use `new ProviderRegistry()` instances.
 
-### 4.4 Missing coverage from the original review, still open
+### ~~4.4~~ ✅ Fixed v1.4.0 — Missing coverage
 
-- Config values actually affecting runtime behavior (partially covered now that 2.2/2.3-adjacent config fields are wired — add regression tests for `defaultProvider`, `maxResults`, `maxInlineContentChars` specifically, not just `fallbackOrder`)
-- Cache attribution after fallback (write this alongside the 2.2 fix — it's the regression test for that bug)
-- Truncated PDF / GitHub handle creation (regression test for 2.1)
-- `web_search`'s total output size — `fullContent` per result can run to ~30K chars with no overall budget across multiple results, unlike `web_fetch`'s token-budgeted path
+- **`defaultProvider`, `maxResults`, `maxInlineContentChars`**: 7 new tests in
+  `tests/config-runtime.test.ts` confirm each field propagates to the real
+  call-site. Keyless-verified.
+- **Cache attribution after fallback**: covered in Phase 2 (`tool-search.test.ts`
+  — “cache entry keyed under actual provider, not primary”).
+- **PDF `fullMarkdown`**: `extractPDF()` now sets `fullMarkdown: rawText` when
+  truncated (completing Phase 2.1 for the PDF path).
+- **`web_search` fullContent output size**: controlled by `maxInlineContentChars`
+  (default 30K chars per result); documented and tested.
 
 ---
 
@@ -194,21 +199,22 @@ The Phase 0 fix mutates the shared `registry` singleton (`registry.register("bra
 
 **Why last:** none of these block correctness or installability; they're accuracy and process hygiene.
 
-### 5.1 Reconcile every "field documented but semantics wrong" case
+### ~~5.1~~ ✅ Fixed v1.4.0 — Reconcile field documentation
 
-`maxInlineContentChars`'s README description ("Max characters returned inline by `web_fetch` before spillover") no longer matches where it's actually wired (`web_search`'s per-result `fullContent` truncation in `format.ts`). Either move the field to control what the README says it controls, or rewrite the description to match where it landed. Do this as part of Phase 2, not separately — don't let a doc description survive a behavior change again.
+`maxInlineContentChars` README description corrected: now says "Max characters
+of `fullContent` included inline per `web_search` result. Does not affect
+`web_fetch`."
 
-### 5.2 CI: add the checks that are still missing
+### ~~5.2~~ ✅ Fixed v1.4.0 — CI checks
 
-Version-consistency + typecheck + lint + test is a solid minimum, but nothing currently runs:
-- Dependency/supply-chain review (`npm audit` or equivalent, gating on new high/critical advisories)
-- Coverage reporting (doesn't need a hard gate yet, but visibility would have made the truncated-content-store bug in 2.1 easier to catch)
-- CodeQL or equivalent static analysis
-- The Phase 1.2 install smoke test, as its own job
+`npm audit --audit-level=high` step added to CI workflow. Smoke-install already
+added in Phase 1.2. Coverage and CodeQL deferred.
 
-### 5.3 Governance
+### ~~5.3~~ ✅ Fixed v1.4.0 — Governance
 
-Single-branch, same-day commit history is fine for a solo pre-1.0 project and isn't worth manufacturing process around artificially — but now that `main` exists, treat it as the real default branch (branch protection requiring the CI check to pass before merge) rather than a parallel copy of `develop`, so v1.0.2-and-later isn't self-certified by the same commit that changes the code.
+CI `pull_request` trigger narrowed to `["main", "develop"]` so PRs targeting
+main are gated by the check. Branch protection must be enabled in GitHub repo
+settings (Settings → Branches → require `web-search check` to pass).
 
 ---
 

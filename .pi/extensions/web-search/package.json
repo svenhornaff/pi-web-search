@@ -1,6 +1,6 @@
 {
   "name": "@svenhornaff/web-search",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Web search and content extraction extension for Pi coding agent (Exa, Brave, Tavily)",
   "author": "Brooklyn42",
   "license": "NCSAL",

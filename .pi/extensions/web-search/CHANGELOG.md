@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.4.0] — 2026-08-24
+
+### Fixed
+
+- **4.4 — PDF `fullMarkdown` (completing Phase 2.1 for PDF path)**: `extractPDF()`
+  in `pdf-extractor.ts` now sets `fullMarkdown: rawText` on the returned
+  `ExtractedContent` when `selected.truncated` is true. Previously only
+  `processContent()` (HTML path) set this field; `maybeStoreHandle()` fell
+  back to `mainContent` for PDFs, so `get_fetch_content` returned truncated
+  text for PDFs just as it did for HTML before Phase 2.1.
+
+- **5.1 — README `maxInlineContentChars` description corrected**: the previous
+  description said "Max characters returned inline by `web_fetch` before
+  spillover" — which was wrong. The field controls the per-result `fullContent`
+  char cap in `web_search` output (via `format.ts`). Updated to: "Max characters
+  of `fullContent` included inline per `web_search` result (Exa/Tavily). Does
+  not affect `web_fetch`."
+
+### Added
+
+- **7 new tests in `tests/config-runtime.test.ts`** (Phase 4.4 coverage):
+  - `config.maxResults` propagates to provider API `count` param; explicit
+    `max_results` param overrides it.
+  - `config.maxInlineContentChars` truncates long `fullContent` in search
+    results; short content passes through verbatim.
+  - `config.defaultProvider` sets registry default; `"auto"` leaves it
+    unchanged.
+  - `ExtractedContent.fullMarkdown` shape check (PDF path structural
+    regression guard).
+  - All tests inject keys into singleton registry — keyless-verified
+    (`env -i HOME=/tmp`).
+
+### Changed
+
+- **CI workflow updated** (Phase 5.2 + 5.3):
+  - `npm audit --audit-level=high` step added after dependency install—
+    gates on new high/critical advisories.
+  - `pull_request` trigger narrowed from `["**"]` to `["main", "develop"]`
+    so PRs to main are checked by the required status check needed for
+    branch protection.
+
+---
+
 ## [1.3.0] — 2026-08-24
 
 ### Fixed

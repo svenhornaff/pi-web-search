@@ -61,6 +61,9 @@ export async function extractPDF(
   return {
     summary: `PDF document — ${pageCount} page${pageCount === 1 ? "" : "s"}`,
     mainContent: selected.markdown,
+    // Preserve full pre-truncation text so ContentStore can serve it via
+    // get_fetch_content without a second network round-trip.
+    ...(selected.truncated ? { fullMarkdown: rawText } : {}),
     metadata: {
       title: filename,
       url,

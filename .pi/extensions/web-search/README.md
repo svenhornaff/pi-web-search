@@ -101,7 +101,7 @@ defaults. `$ENV_VAR` references in values are interpolated at load time.
 | `domainPolicy.allow` | `string[]` | `[]` | If non-empty, only these domains allowed in `web_fetch`. Suffix match: `"example.com"` matches `foo.example.com`. |
 | `domainPolicy.deny` | `string[]` | `[]` | Always denied. Deny wins over allow on conflict. |
 | `maxResults` | number (1–20) | `5` | Default result count. |
-| `maxInlineContentChars` | number (≥1000) | `30000` | Max characters returned inline by `web_fetch` before spillover. |
+| `maxInlineContentChars` | number (≥1000) | `30000` | Max characters of `fullContent` included inline per `web_search` result (Exa/Tavily). Does not affect `web_fetch`. |
 
 Config is reloaded on every `session_start` — edit the file and run `/reload`
 to pick up changes without restarting Pi.
