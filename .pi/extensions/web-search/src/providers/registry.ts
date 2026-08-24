@@ -15,7 +15,7 @@ import { TavilyProvider } from "./tavily.js";
 export type ProviderName = "brave" | "tavily";
 
 /** Provider registry singleton */
-class ProviderRegistry {
+export class ProviderRegistry {
   private providers = new Map<ProviderName, SearchProvider>();
   private defaultProvider: ProviderName = "brave";
 
@@ -82,6 +82,31 @@ class ProviderRegistry {
    */
   getDefaultProviderName(): ProviderName {
     return this.defaultProvider;
+  }
+
+  /**
+   * Try providers in order, returning the first success.
+   * Falls through to the next provider only when the current one throws
+   * (missing key, 401, network error, etc.).
+   *
+   * This is the right path for single-provider calls — `getProvider()` only
+   * falls back when the *name* is unregistered, not when search() fails.
+   */
+  async searchWithFallback(
+    names: ProviderName[],
+    query: string,
+    options?: SearchOptions,
+    signal?: AbortSignal,
+  ): Promise<SearchResponse> {
+    let lastError: unknown;
+    for (const name of names) {
+      try {
+        return await this.getProvider(name).search(query, options, signal);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? new Error("All providers failed");
   }
 
   /**

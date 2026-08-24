@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.7.0] — 2026-08-24
+
+### Added
+
+- **`src/config.ts` — JSON config file loader** (`~/.pi/web-search.json` or
+  `$PI_CODING_AGENT_DIR/web-search.json`). Supports `defaultProvider`,
+  `fallbackOrder`, `maxResults`, `maxInlineContentChars`. All fields optional
+  — missing fields fall back to built-in defaults. `$ENV_VAR` references in
+  string values are interpolated from `process.env` at load time. Config is
+  loaded on every `session_start` so edits take effect on `/reload` without
+  restarting Pi. Malformed or missing file never throws — silently uses
+  defaults.
+
+- **Provider fallback chain — `ProviderRegistry.searchWithFallback()`**: tries
+  providers in order, returning the first success. Previously
+  `getProvider().search()` would propagate the error directly if a provider
+  failed (missing key, 401, network error); now auto-selected calls
+  transparently fall through to the next provider in `config.fallbackOrder`.
+  Explicit `provider:` param still means no fallback (intentional choice).
+  `ProviderRegistry` is now exported (was private class) to enable isolated
+  unit tests.
+
+- **24 new tests** across two new test files:
+  - `tests/config.test.ts` — 17 tests covering defaults, valid overrides,
+    invalid value rejection, malformed JSON, env-var interpolation.
+  - `tests/registry.test.ts` — 7 tests covering `searchWithFallback` success,
+    single-hop fallback, multi-hop fallback, all-fail error propagation, empty
+    chain, and constructor state.
+
+### Changed
+
+- **`tool-search.ts` `execute()` signature aligned**: now accepts `_onUpdate`
+  and `_ctx` parameters (matching the pi tool execute contract), ready for
+  future config-dependent behaviour (batch queries, per-call config overrides).
+- **`createSearchTool()` accepts optional `getConfig` getter**: threads
+  live config into the tool execute path without breaking the existing
+  no-config call sites (getter is optional, defaults to null).
+- **`ProviderRegistry` exported**: previously a private class; now exported
+  so tests can construct isolated instances without touching the singleton.
+
+---
+
 ## [0.6.0] — 2026-08-24
 
 ### Changed

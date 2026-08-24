@@ -8,6 +8,7 @@ import { suggestProvider } from "./provider-selector.js";
 import { aggregate } from "./search-aggregator.js";
 import type { SearchCache } from "./search-cache.js";
 import { formatSearchResults } from "./format.js";
+import type { WebSearchConfig } from "./config.js";
 
 interface SearchParams {
   query: string;
@@ -18,9 +19,13 @@ interface SearchParams {
   providers?: string[];
 }
 
-export function createSearchTool(getCache: SearchCache | (() => SearchCache)) {
+export function createSearchTool(
+  getCache: SearchCache | (() => SearchCache),
+  getConfig?: () => WebSearchConfig | null,
+) {
   const resolveCache = (): SearchCache =>
     typeof getCache === "function" ? getCache() : getCache;
+  const resolveConfig = (): WebSearchConfig | null => getConfig?.() ?? null;
 
   return {
     name: "web_search",
@@ -89,8 +94,9 @@ export function createSearchTool(getCache: SearchCache | (() => SearchCache)) {
       ),
     }),
 
-    async execute(_toolCallId: string, _params: unknown, signal: AbortSignal | undefined) {
+    async execute(_toolCallId: string, _params: unknown, signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) {
       const params = _params as SearchParams;
+      const config = resolveConfig();
       const options = {
         maxResults: params.max_results ?? 5,
         freshness: params.freshness as
@@ -137,7 +143,7 @@ export function createSearchTool(getCache: SearchCache | (() => SearchCache)) {
           options,
           signal,
         );
-        if (responses.length === 0) throw new Error("All providers failed");
+        if (responses.length === 0) throw new Error("All providers failed (multi-provider)");
 
         const aggregated = aggregate(responses);
         cache.set(cacheKey, aggregated.results);
@@ -165,21 +171,24 @@ export function createSearchTool(getCache: SearchCache | (() => SearchCache)) {
         };
       }
 
-      // ── Single provider ────────────────────────────────────────────────
-      const providerName =
+      // ── Single provider (with fallback chain) ────────────────────────
+      // Explicit provider param = no fallback (user made a deliberate choice).
+      // Auto-selected = run fallback chain so a missing/failing primary
+      // degrades to the next available provider automatically.
+      const primaryProvider =
         singleProvider ?? requestedProviders?.[0] ?? suggestProvider(params.query);
 
-      const cacheKey = cache.key(params.query, [providerName], options);
+      const cacheKey = cache.key(params.query, [primaryProvider], options);
       const cached = cache.get(cacheKey);
 
       if (cached) {
         return {
           content: [
-            { type: "text" as const, text: formatSearchResults(cached, providerName) },
+            { type: "text" as const, text: formatSearchResults(cached, primaryProvider) },
           ],
           details: {
             query: params.query,
-            providers: [providerName],
+            providers: [primaryProvider],
             resultCount: cached.length,
             deduplicatedFrom: cached.length,
             overlap: [] as string[],
@@ -189,9 +198,24 @@ export function createSearchTool(getCache: SearchCache | (() => SearchCache)) {
         };
       }
 
-      const response = await registry
-        .getProvider(providerName)
-        .search(params.query, options, signal);
+      // Build fallback chain: primary first, then config order minus primary.
+      // Explicit provider = single-entry chain (no silent fallback).
+      const fallbackChain: ProviderName[] =
+        singleProvider != null
+          ? [singleProvider]
+          : [
+              primaryProvider,
+              ...(config?.fallbackOrder ?? ["brave", "tavily"] as ProviderName[]).filter(
+                (p: ProviderName) => p !== primaryProvider,
+              ),
+            ];
+
+      const response = await registry.searchWithFallback(
+        fallbackChain,
+        params.query,
+        options,
+        signal,
+      );
       cache.set(cacheKey, response.results);
       cache.evictExpired();
 

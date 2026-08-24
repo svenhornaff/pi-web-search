@@ -74,6 +74,31 @@ guard's current design. Documented here rather than silently unhandled;
 every non-rebinding SSRF path (direct requests, redirects, IP-literal
 targets, IPv6 variants) is covered.
 
+## Configuration
+
+Create `~/.pi/web-search.json` (or `$PI_CODING_AGENT_DIR/web-search.json`) to
+customise behaviour. All fields are optional — omitted fields use built-in
+defaults. `$ENV_VAR` references in values are interpolated at load time.
+
+```json
+{
+  "defaultProvider": "auto",
+  "fallbackOrder": ["brave", "tavily"],
+  "maxResults": 5,
+  "maxInlineContentChars": 30000
+}
+```
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `defaultProvider` | `"auto"` \| `"brave"` \| `"tavily"` | `"auto"` | Provider used when the model doesn’t specify one. `auto` = heuristic selection. |
+| `fallbackOrder` | `string[]` | `["brave","tavily"]` | Providers tried in order when the primary fails (missing key, error). Explicit `provider:` params bypass fallback. |
+| `maxResults` | number (1–20) | `5` | Default result count. |
+| `maxInlineContentChars` | number (≥1000) | `30000` | Max characters returned inline by `web_fetch` before spillover. |
+
+Config is reloaded on every `session_start` — edit the file and run `/reload`
+to pick up changes without restarting Pi.
+
 ## Setup
 
 ### Required: Brave Search API key
@@ -182,7 +207,8 @@ Sections are scored and selected greedily to fill the token budget:
 
 ```
 src/
-├── index.ts              — Extension factory: model tracking, cache lifecycle, tool registration (<60 LOC)
+├── index.ts              — Extension factory: model tracking, cache + config lifecycle, tool registration
+├── config.ts             — JSON config loader (~/.pi/web-search.json), $ENV_VAR interpolation, soft-fail
 ├── tool-search.ts        — web_search tool definition + execute
 ├── tool-fetch.ts         — web_fetch tool definition + execute (dynamic budget via ctx.getContextUsage())
 ├── format.ts             — formatSearchResults(), buildFetchResponse()

@@ -156,32 +156,11 @@ The entire 0.1.0 → 0.5.1 history described across 14 CHANGELOG entries happene
 
 _Goal: match `pi-web-access` on the features that matter, without chasing its breadth._
 
-### 4.1 Provider Fallback Chain
+### ~~4.1 Provider Fallback Chain~~ ✅ Done v0.7.0
 
-**Why:** `ProviderRegistry.getProvider(name)` only falls back to the default provider when the requested *name* isn't registered at all — it does nothing when a registered provider's `search()` call actually fails (missing key, 401, network error). `searchAll()` already degrades gracefully via `Promise.allSettled`, but that's only used for multi-provider fan-out, not the common single-provider path most `web_search` calls take.
-
-**How:** Add a `searchWithFallback(names: ProviderName[], query, options)` that tries providers in order and returns the first success:
-
-```ts
-async searchWithFallback(
-  names: ProviderName[],
-  query: string,
-  options?: SearchOptions,
-  signal?: AbortSignal,
-): Promise<SearchResponse> {
-  let lastError: unknown;
-  for (const name of names) {
-    try {
-      return await this.getProvider(name).search(query, options, signal);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError ?? new Error("All providers failed");
-}
-```
-
-Wire the fallback order through the JSON config (4.3) rather than hardcoding it.
+`ProviderRegistry.searchWithFallback()` added. Auto-selected calls try
+providers in `config.fallbackOrder` order; explicit `provider:` param
+still means no fallback. 7 tests in `tests/registry.test.ts`.
 
 ### 4.2 Exa Provider (Zero-Config)
 
@@ -204,24 +183,12 @@ export class ExaProvider implements SearchProvider {
 
 Register it first in the fallback chain (4.1) so a fresh install works with zero configuration — Brave/Tavily become opt-in upgrades, not requirements.
 
-### 4.3 JSON Config File
+### ~~4.3 JSON Config File~~ ✅ Done v0.7.0
 
-**Why:** Right now the only configuration surface is environment variables and `.env` — no way to set default provider, fallback order, or content-size limits without code changes.
-
-**How:** `~/.pi/web-search.json` (or under `PI_CODING_AGENT_DIR`):
-
-```json
-{
-  "provider": "auto",
-  "fallbackOrder": ["exa", "brave", "tavily"],
-  "braveApiKey": "$BRAVE_API_KEY",
-  "tavilyApiKey": "$TAVILY_API_KEY",
-  "exaApiKey": "$EXA_API_KEY",
-  "maxInlineContentChars": 30000
-}
-```
-
-`$ENV_VAR` interpolation for secrets, loaded on `session_start`, reloadable via `/reload`. This is what 4.1's fallback order should actually be sourced from, and it's the biggest single lever on Ecosystem Fit (currently 5.5) — most of what's blocking that score is "no way to configure this without editing source."
+`src/config.ts` loads `~/.pi/web-search.json` (or `$PI_CODING_AGENT_DIR/web-search.json`)
+on every `session_start`. Fields: `defaultProvider`, `fallbackOrder`, `maxResults`,
+`maxInlineContentChars`. `$ENV_VAR` interpolation, soft-fail on missing/malformed file.
+17 tests in `tests/config.test.ts`.
 
 ### 4.4 `source_check` Tool
 
@@ -325,7 +292,7 @@ When HTML extraction yields an empty shell (common with Next.js SSR-then-hydrate
 | Sprint | Work | Score Impact |
 |--------|------|:------------:|
 | ~~**1**~~ | ~~License conflict + npm name decision (Open — Project Foundation)~~ ✅ **Done v0.6.0** | Documentation 7.5→8.5, unblocks 6.1 |
-| **2** | 4.1 (fallback chain) + 4.3 (config file) | Provider Design 7→8, Ecosystem Fit 5.5→7 |
+| ~~**2**~~ | ~~4.1 (fallback chain) + 4.3 (config file)~~ ✅ **Done v0.7.0** | Provider Design 7→8, Ecosystem Fit 5.5→7 |
 | **3** | 4.2 (Exa zero-config) + 6.1 (publish) | Ecosystem Fit 7→8.5 |
 | **4** | 4.5–4.7 (GitHub, batch, fetch fallback) + Phase 5 integration tests | Feature Completeness 6.5→8, Testing 8→9 |
 | **5** | 7.1–7.5 (answer mode, stored content, rate limiting, domain policy, RSC) | 9→9.5+ |

@@ -22,6 +22,7 @@ import { createFetchTool } from "./tool-fetch.js";
 import { registry } from "./providers/registry.js";
 import { suggestProvider } from "./provider-selector.js";
 import { cleanExpiredSpillover } from "./spillover.js";
+import { loadConfig, type WebSearchConfig } from "./config.js";
 
 function renderSearchWidget(ctx: ExtensionContext, cache: SearchCache): void {
   if (!ctx.hasUI) return;
@@ -36,11 +37,14 @@ export default function piWebSearch(pi: ExtensionAPI): void {
   let budget: ModelBudget = buildUnknownBudget();
   let counter: TokenCounter = createTokenCounter("unknown", "unknown");
   const cache = new SearchCache();
+  let config: WebSearchConfig | null = null;
 
   // ── Lifecycle events ────────────────────────────────────────────────────
 
   pi.on("session_start", (_event, ctx) => {
     cache.clear();
+    // Load (or reload) config each session — picks up edits without restarting Pi.
+    loadConfig().then((cfg) => { config = cfg; }).catch(() => {});
     renderSearchWidget(ctx, cache);
   });
 
@@ -110,7 +114,7 @@ export default function piWebSearch(pi: ExtensionAPI): void {
   });
 
   // ── Tool registration ──────────────────────────────────────────────────
-  pi.registerTool(createSearchTool(() => cache));
+  pi.registerTool(createSearchTool(() => cache, () => config));
   pi.registerTool(
     createFetchTool(
       () => budget,
